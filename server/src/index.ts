@@ -126,7 +126,7 @@ app.post('/api/approve-action', (req, res) => {
 });
 
 app.get('/api/execute-mission', async (req, res) => {
-  const { workspacePath, agent, taskName, taskId, skills } = req.query as any;
+  const { workspacePath, agent, taskName, taskId, skills, branchName } = req.query as any;
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -136,6 +136,25 @@ app.get('/api/execute-mission', async (req, res) => {
   const apiKey = getApiKey();
   const modelId = getModelId();
   if (!apiKey) { sendEvent('log', { log: '> [ERROR] API Key missing.' }); return res.end(); }
+
+  // T5: auto git branch checkout
+  if (branchName && workspacePath) {
+    try {
+      const git = simpleGit(workspacePath);
+      if (await git.checkIsRepo()) {
+        const branches = await git.branchLocal();
+        if (branches.all.includes(branchName)) {
+          await git.checkout(branchName);
+          sendEvent('log', { log: `> [GIT] Checked out existing branch: ${branchName}` });
+        } else {
+          await git.checkoutLocalBranch(branchName);
+          sendEvent('log', { log: `> [GIT] Created branch: ${branchName}` });
+        }
+      }
+    } catch (err: any) {
+      sendEvent('log', { log: `> [GIT] Branch setup skipped: ${err.message}` });
+    }
+  }
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);

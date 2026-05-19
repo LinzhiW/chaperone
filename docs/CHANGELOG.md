@@ -1,5 +1,15 @@
 # Change Log - Agent Company
 
+## [2026-05-19] — T5: Git branch auto-checkout
+
+### Added
+- `/api/execute-mission` accepts `branchName` param
+- Before execution loop: `simpleGit` checks if workspace is a git repo, then `checkoutLocalBranch(branchName)` (new) or `checkout(branchName)` (existing); failure is non-fatal (logs warning, continues)
+- Frontend passes `assignment.branchName` to execute-mission query string
+- Worker log shows `[GIT] Created branch: feat/xxx` or `[GIT] Checked out existing branch: feat/xxx`
+
+---
+
 ## [2026-05-19] — T4: Skill loadout injection
 
 ### Added

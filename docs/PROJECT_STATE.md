@@ -33,7 +33,7 @@ PM Panel → user briefs goal
 | T2 · Multi-panel UI + data model | ✅ done | Mission + Assignment, sidebar, PM Panel, Mission Dashboard |
 | T3 · Per-panel backend session | ✅ done | `panelSessions` Map, `activePanels` Set, `/api/panel/:id/nudge` |
 | T4 · Skill loadout injection | ✅ done | `readSkillContent()`, `systemInstruction` build, `/api/skills`, PM prompt updated | Skills injected into worker system prompt |
-| T5 · Git branch auto-checkout | ⏳ | `git checkout -b feat/xxx` on worker start |
+| T5 · Git branch auto-checkout | ✅ done | `simpleGit` checkout before loop, non-fatal fallback | `git checkout -b feat/xxx` on worker start |
 | T6 · Dashboard branch status | ⏳ | Commit count / file diff per branch |
 | T7 · Reviewer panel | ⏳ | Cross-branch diff + 4-type notes + decision bar |
 | T8 · GitHub PR trigger | ⏳ | `gh pr create` button |

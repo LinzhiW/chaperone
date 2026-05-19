@@ -329,6 +329,7 @@ const App: React.FC = () => {
       taskName: assignment.task,
       taskId: String(assignmentId),
       skills: JSON.stringify(assignment.skillLoadout),
+      branchName: assignment.branchName,
     });
     const es = new EventSource(`http://localhost:3005/api/execute-mission?${qs}`);
     es.onmessage = (event) => {
