@@ -1,5 +1,26 @@
 # Change Log - Agent Company
 
+## [2026-05-19] — T1 + T2: Structured task plan + Multi-panel architecture
+
+### Added
+- **T1 · PM structured output**: CEO system prompt now requires `<<<TASK_PLAN>>>` JSON block (`agent_id`, `task`, `branch_name`, `skill_loadout`). Frontend parses it and creates Assignment objects.
+- **T2 · Mission + Assignment data model**: Replaced flat `Task[]` with `Mission` + `Assignment[]`. Missions persist in localStorage.
+- **T2 · Sidebar restructure**: WORKSPACE → TEAM (PM + Departments) → MISSIONS → SKILLS. Mission items show numeric HITL badge.
+- **T2 · PM Panel**: Identity bar (`plans · tracks · never executes`) + tab strip (Chat / PRD.md / SOP.md / Dev log.md) + running missions banner + quick-chip shortcuts.
+- **T2 · Mission Plan dispatch card**: After PM outputs a plan, shows Assignment cards with branch/skill chips + orange "Dispatch" confirm area. Clicking Dispatch creates a Mission and switches to Mission Dashboard.
+- **T2 · Mission Dashboard**: MissionStrip (status + HITL count + ← PM panel) + 2×2 worker tile grid + Reviewer strip. Each WorkerTile: color swatch + branch + status + stream log + inline HITL approval + nudge composer.
+
+### Changed
+- CEO → PM (Project Orchestrator) throughout UI and terminology.
+- Task → Assignment, Session → Mission (aligns with DESIGN_LOG glossary).
+- `[TASK: X, Y]` regex parser → `<<<TASK_PLAN>>>` JSON block parser.
+- Dark Discord theme retained as default; warm white (wf-styles.css tokens) deferred to post-demo theming pass.
+
+### Design decisions recorded
+- **Visual theme freeze**: Warm white (`#faf7f0`) designated as future light/bright mode; current dark theme stays for demo. Full light/dark toggle planned after T5 (core flow working end-to-end). Design tokens from `wf-styles.css` saved for that pass.
+- **Reviewed Claude Design bundle** (`Agent Company Wireframes.html`): implementation aligns with DESIGN_LOG sections 1–9. Phase 2 items (PRD.md tab, sticky comment gutter, Reviewer report, Archive → dev log) deferred.
+- **Negated patterns respected**: no "Talk to PM" in mission view, no auto-dispatch, no QA dept.
+
 ## [2026-04-26] - Phase 3 & 4 Milestone: Tool-Using Agents
 
 ### Added
