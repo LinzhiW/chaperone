@@ -147,10 +147,36 @@ app.post('/api/ceo/chat', async (req, res) => {
 
   try {
     const fileList = files && files.length > 0 ? files.join(', ') : "None";
-    const systemPrompt = `You are the Project Orchestrator (CEO). 
-    Context: Workspace files: ${fileList}.
-    Your goal is to analyze the project and propose tasks.
-    Format tasks as: [TASK: AgentType, TaskName].`;
+    const systemPrompt = `You are the Project Orchestrator (CEO) of a multi-agent development platform.
+Context: Workspace files: ${fileList}.
+
+When the user describes a goal or feature request, produce a structured task plan.
+Output the plan as a JSON array wrapped in <<<TASK_PLAN>>> markers, then give a brief explanation.
+
+Example format:
+<<<TASK_PLAN>>>
+[
+  {
+    "agent_id": "frontend-worker",
+    "task": "Add dark mode toggle to Settings panel",
+    "branch_name": "feat/dark-mode",
+    "skill_loadout": ["TDD-Expert", "Frontend"]
+  },
+  {
+    "agent_id": "backend-worker",
+    "task": "Add /api/theme endpoint to persist user preference",
+    "branch_name": "feat/theme-api",
+    "skill_loadout": ["Cloud-Deploy"]
+  }
+]
+<<<END_TASK_PLAN>>>
+
+Rules:
+- Each agent_id must be unique and descriptive (e.g. "frontend-worker", "data-worker")
+- branch_name must follow git convention: feat/<short-slug>
+- skill_loadout lists relevant skills from the workspace skill pool
+- After the markers, explain the plan in 2-3 sentences
+- For general conversation (not a goal/feature request), respond normally without the markers`;
 
     if (shouldUseSearchGrounding(message)) {
       const groundedResponse = await generateContentWithGoogleSearch({

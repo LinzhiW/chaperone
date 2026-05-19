@@ -9,8 +9,9 @@ import {
 // --- Types ---
 interface Session { id: number; name: string; active: boolean; }
 interface Skill { id: number; name: string; source: string; category: string; }
-interface Task { 
-  id: number; agent: string; name: string; status: string; assignedSkills: number[]; 
+interface Task {
+  id: number; agent: string; name: string; status: string; assignedSkills: number[];
+  branchName?: string; skillLoadout?: string[];
   logs?: string[]; pendingAction?: { tool: string; args: any };
 }
 
@@ -103,10 +104,21 @@ const App: React.FC = () => {
       const data = await res.json();
       if (data.text) {
         setCeoMessages(prev => [...prev, { role: 'model', content: data.text, groundingSources: data.groundingSources }]);
-        const taskRegex = /\[TASK:\s*([^,]+),\s*([^\]]+)\]/g;
-        let match;
-        while ((match = taskRegex.exec(data.text)) !== null) {
-          setTasks(prev => [...prev, { id: Date.now() + Math.random(), agent: match[1].trim(), name: match[2].trim(), status: 'PROPOSED', assignedSkills: [] }]);
+        const planMatch = data.text.match(/<<<TASK_PLAN>>>([\s\S]*?)<<<END_TASK_PLAN>>>/);
+        if (planMatch) {
+          try {
+            const parsed: { agent_id: string; task: string; branch_name: string; skill_loadout: string[] }[] = JSON.parse(planMatch[1].trim());
+            const newTasks: Task[] = parsed.map(p => ({
+              id: Date.now() + Math.random(),
+              agent: p.agent_id,
+              name: p.task,
+              branchName: p.branch_name,
+              skillLoadout: p.skill_loadout || [],
+              status: 'PROPOSED',
+              assignedSkills: [],
+            }));
+            setTasks(prev => [...prev, ...newTasks]);
+          } catch { /* malformed JSON, ignore */ }
         }
       } else if (data.error) {
         setCeoMessages(prev => [...prev, { role: 'model', content: `[ERROR] ${data.error}` }]);
@@ -236,13 +248,18 @@ const App: React.FC = () => {
             <span style={{ fontWeight: 'bold' }}>CEO Agent (Project Orchestrator)</span>
           </div>
           <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {ceoMessages.map((m, i) => (
-              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-                <div style={{ background: m.role === 'user' ? '#5865f2' : '#383a40', padding: '12px 16px', borderRadius: '12px', fontSize: '14px', lineHeight: '1.5' }}>
-                  {m.content}
+            {ceoMessages.map((m, i) => {
+              const cleanContent = m.role === 'model'
+                ? m.content.replace(/<<<TASK_PLAN>>>[\s\S]*?<<<END_TASK_PLAN>>>/g, '📋 *Task plan generated — see cards below.*')
+                : m.content;
+              return (
+                <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                  <div style={{ background: m.role === 'user' ? '#5865f2' : '#383a40', padding: '12px 16px', borderRadius: '12px', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                    {cleanContent}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {isCeoThinking && <div style={{ color: '#949ba4', fontSize: '12px' }}>CEO is analyzing project files...</div>}
             <div ref={chatEndRef} />
           </div>
@@ -265,8 +282,20 @@ const App: React.FC = () => {
               <div style={{ fontSize: '11px', color: '#949ba4', marginBottom: '15px', fontWeight: 'bold' }}>PROPOSED</div>
               {tasks.filter(t => t.status === 'PROPOSED').map(task => (
                 <div key={task.id} style={{ background: '#313338', borderRadius: '8px', padding: '15px', border: '1px solid #1e1f22', marginBottom: '12px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{task.agent}</div>
-                  <div style={{ fontSize: '12px', color: '#b5bac1', margin: '5px 0 15px' }}>{task.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{task.agent}</div>
+                    {task.branchName && (
+                      <code style={{ fontSize: '10px', background: '#1e1f22', color: '#5865f2', padding: '2px 6px', borderRadius: '4px' }}>{task.branchName}</code>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#b5bac1', marginBottom: '10px' }}>{task.name}</div>
+                  {task.skillLoadout && task.skillLoadout.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '12px' }}>
+                      {task.skillLoadout.map(s => (
+                        <span key={s} style={{ fontSize: '10px', background: '#2b2d31', color: '#23a559', padding: '2px 8px', borderRadius: '10px', border: '1px solid #23a559' }}>{s}</span>
+                      ))}
+                    </div>
+                  )}
                   <button onClick={() => startMission(task.id)} style={{ width: '100%', background: '#23a559', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>▶ START MISSION</button>
                 </div>
               ))}
