@@ -77,12 +77,15 @@ function DeptGroup({ name, workers }: { name: string; workers: string[] }) {
 
 // ─── Worker Tile ─────────────────────────────────────────────────────────────
 
-function WorkerTile({ assignment, color, missionId, onStart, onApprove }: {
+function WorkerTile({ assignment, color, missionId, onStart, onApprove, nudgeInput, onNudgeChange, onNudgeSend }: {
   assignment: Assignment;
   color: string;
   missionId: string;
   onStart: () => void;
   onApprove: (approved: boolean) => void;
+  nudgeInput: string;
+  onNudgeChange: (val: string) => void;
+  onNudgeSend: () => void;
 }) {
   const statusLabel = assignment.status === 'running'
     ? assignment.pendingAction ? '⏸ waiting' : '● running'
@@ -154,10 +157,18 @@ function WorkerTile({ assignment, color, missionId, onStart, onApprove }: {
 
       {/* Worker composer (nudge) */}
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '6px 8px', background: '#1f2125', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-        <div style={{ flex: 1, background: '#25272d', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 3, padding: '4px 8px', fontSize: 11, color: '#5a5c66' }}>
-          talk to {assignment.agentId}…
-        </div>
-        <div style={{ width: 20, height: 18, background: '#2a2c33', color: '#7d808a', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, cursor: 'pointer' }}>↵</div>
+        <input
+          value={nudgeInput}
+          onChange={e => onNudgeChange(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && nudgeInput.trim() && onNudgeSend()}
+          placeholder={assignment.status === 'proposed' ? 'Start worker first…' : `talk to ${assignment.agentId}…`}
+          disabled={assignment.status === 'proposed'}
+          style={{ flex: 1, background: '#25272d', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 3, padding: '4px 8px', fontSize: 11, color: '#e6e7ea', outline: 'none', opacity: assignment.status === 'proposed' ? 0.4 : 1 }}
+        />
+        <div
+          onClick={() => nudgeInput.trim() && onNudgeSend()}
+          style={{ width: 20, height: 18, background: nudgeInput.trim() ? '#5b6cf2' : '#2a2c33', color: '#e6e7ea', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, cursor: nudgeInput.trim() ? 'pointer' : 'default', transition: 'background .15s' }}
+        >↵</div>
       </div>
     </div>
   );
@@ -184,6 +195,9 @@ const App: React.FC = () => {
   const [pmInput, setPmInput] = useState('');
   const [isPmThinking, setIsPmThinking] = useState(false);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
+
+  // Nudge inputs: keyed by assignment id
+  const [nudgeInputs, setNudgeInputs] = useState<Record<number, string>>({});
 
   // UI
   const [activeView, setActiveView] = useState<'pm' | string>('pm');
@@ -326,6 +340,25 @@ const App: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: assignmentId, approved }),
     });
+  };
+
+  const nudgeWorker = async (missionId: string, assignmentId: number) => {
+    const message = nudgeInputs[assignmentId]?.trim();
+    if (!message) return;
+    setNudgeInputs(prev => ({ ...prev, [assignmentId]: '' }));
+    updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [YOU] ${message}`] }));
+    try {
+      const res = await fetch(`http://localhost:3005/api/panel/${assignmentId}/nudge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      const reply = data.text || data.error || '[No response]';
+      updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [WORKER] ${reply}`] }));
+    } catch {
+      updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, '> [ERROR] Could not reach worker session.'] }));
+    }
   };
 
   const saveSettings = async () => {
@@ -677,6 +710,9 @@ const App: React.FC = () => {
                     color={WORKER_COLORS[idx % WORKER_COLORS.length]}
                     onStart={() => startWorker(activeMission.id, assignment.id)}
                     onApprove={(approved) => approveAction(activeMission.id, assignment.id, approved)}
+                    nudgeInput={nudgeInputs[assignment.id] ?? ''}
+                    onNudgeChange={val => setNudgeInputs(prev => ({ ...prev, [assignment.id]: val }))}
+                    onNudgeSend={() => nudgeWorker(activeMission.id, assignment.id)}
                   />
                 ))}
               </div>

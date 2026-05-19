@@ -27,6 +27,14 @@ interface PendingAction {
 }
 const activeMissions = new Map<string, PendingAction>();
 
+// --- Per-panel sessions (T3) ---
+interface PanelSession {
+  chat: any;           // Gemini ChatSession
+  workspacePath: string;
+}
+const panelSessions = new Map<string, PanelSession>();
+const activePanels  = new Set<string>();  // panels with live SSE connection
+
 // --- Agent Tools ---
 const runShell = (command: string, workspacePath: string): Promise<string> => {
   return new Promise((resolve) => {
@@ -106,6 +114,10 @@ app.get('/api/execute-mission', async (req, res) => {
 
     const model = genAI.getGenerativeModel({ model: modelId, tools });
     const chat = model.startChat();
+
+    // Store session so nudge endpoint can continue the conversation later
+    panelSessions.set(taskId, { chat, workspacePath });
+    activePanels.add(taskId);
     sendEvent('log', { log: `> [SYSTEM] Agent initialized using ${modelId}.` });
 
     let result = await chat.sendMessage(`You are ${agent}. Mission: ${taskName}. Workspace: ${workspacePath}. Use tools to act. Always explain your intent.`);
@@ -116,7 +128,7 @@ app.get('/api/execute-mission', async (req, res) => {
         for (const call of calls) {
           sendEvent('require_approval', { tool: call.name, args: call.args });
           const approved = await new Promise<boolean>((resolve) => activeMissions.set(taskId, { resolve, toolCall: call }));
-          if (!approved) { sendEvent('log', { log: `> [DENIED] Stopping.` }); return res.end(); }
+          if (!approved) { sendEvent('log', { log: `> [DENIED] Stopping.` }); activePanels.delete(taskId); return res.end(); }
           
           let output = "";
           if (call.name === "run_shell") output = await runShell((call.args as any).command, workspacePath);
@@ -126,16 +138,18 @@ app.get('/api/execute-mission', async (req, res) => {
           sendEvent('log', { log: `> [OUTPUT] ${output.substring(0, 300)}` });
           result = await chat.sendMessage([{ functionResponse: { name: call.name, response: { result: output } } }]);
         }
-      } else { 
+      } else {
         const text = response.text();
-        if (text) sendEvent('log', { log: `> [FINAL] ${text}` }); 
-        break; 
+        if (text) sendEvent('log', { log: `> [FINAL] ${text}` });
+        break;
       }
     }
+    activePanels.delete(taskId);
     res.end();
-  } catch (err: any) { 
-    sendEvent('log', { log: `> [CRITICAL ERROR] ${err.message}` }); 
-    res.end(); 
+  } catch (err: any) {
+    activePanels.delete(taskId);
+    sendEvent('log', { log: `> [CRITICAL ERROR] ${err.message}` });
+    res.end();
   }
 });
 
@@ -197,6 +211,36 @@ Rules:
   } catch (err: any) { 
     console.error(err);
     res.status(500).json({ error: err.message }); 
+  }
+});
+
+// --- Nudge a worker (T3) ---
+// Continues the panel's existing ChatSession after the main execution loop.
+app.post('/api/panel/:panelId/nudge', async (req, res) => {
+  const { panelId } = req.params;
+  const { message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
+
+  if (activePanels.has(panelId)) {
+    return res.json({ text: 'Worker is currently executing — approve or deny the pending action first.' });
+  }
+
+  const session = panelSessions.get(panelId);
+  if (!session) return res.status(404).json({ error: 'No session found. Start the worker first.' });
+
+  try {
+    const result = await session.chat.sendMessage(message);
+    const response = await result.response;
+    const calls = response.functionCalls();
+    if (calls && calls.length > 0) {
+      // Worker wants to take action — surface this but don't auto-execute
+      return res.json({
+        text: (response.text() || 'Worker wants to take action.') + '\n> [TOOL REQUEST] Start the worker again to execute.',
+      });
+    }
+    res.json({ text: response.text() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
