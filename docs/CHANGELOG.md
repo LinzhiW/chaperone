@@ -1,5 +1,29 @@
 # Change Log - Agent Company
 
+## [2026-05-19] — T4: Skill loadout injection
+
+### Added
+- `getSkillsDir()` resolves `~/.agents/skills` (overridable via `SKILLS_PATH` env)
+- `listSkills()` scans skill folders, extracts `description` from frontmatter
+- `readSkillContent(name)` case-insensitive match → reads `SKILL.md` content
+- `GET /api/skills` endpoint returns `[{name, description}]` from local skills folder
+- `/api/execute-mission` now accepts `skills` param (JSON array); builds `systemInstruction` with skill content injected — worker LLM follows skill guidance
+- PM system prompt now includes full list of available skill names so the plan output uses real skill names
+- Frontend: passes `assignment.skillLoadout` as `skills` to execute-mission
+- Frontend: sidebar Skills section loads from `/api/skills` at runtime, shows all 31 real skills with tooltip descriptions; no longer hardcoded
+
+---
+
+## [2026-05-19] — T3: Per-panel backend session + functional nudge
+
+### Added
+- `panelSessions Map<panelId, {chat, workspacePath}>` persists each worker's `ChatSession` independently
+- `activePanels Set` tracks which panels have a live SSE connection
+- `POST /api/panel/:panelId/nudge` — continues the worker's existing chat session after execution ends; returns a busy message if SSE still active; surfaces tool requests without auto-executing
+- WorkerTile nudge composer: real `<input>`, Enter key support, `[YOU] / [WORKER]` log lines, disabled while worker is proposed, send button highlights when input has content
+
+---
+
 ## [2026-05-19] — T1 + T2: Structured task plan + Multi-panel architecture
 
 ### Added

@@ -31,7 +31,7 @@ interface Mission {
   assignments: Assignment[];
 }
 
-interface Skill { id: number; name: string; source: string; category: string; }
+interface Skill { id: number; name: string; source: string; category: string; description?: string; }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -181,10 +181,7 @@ const App: React.FC = () => {
   const [config, setConfig] = useLocalStorage('ac_config', {
     googleKey: '', projectPath: '', defaultModel: 'gemini-2.5-flash',
   });
-  const [skills] = useLocalStorage<Skill[]>('ac_skills', [
-    { id: 1, name: 'TDD-Expert',   source: 'Local', category: 'Universal' },
-    { id: 2, name: 'Cloud-Deploy', source: 'Local', category: 'Task-Specific' },
-  ]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [missions, setMissions] = useLocalStorage<Mission[]>('ac_missions', []);
 
   // Session state
@@ -215,6 +212,18 @@ const App: React.FC = () => {
       .then(res => res.ok ? setBackendStatus('online') : setBackendStatus('offline'))
       .catch(() => setBackendStatus('offline'));
   }, []);
+
+  useEffect(() => {
+    if (backendStatus !== 'online') return;
+    fetch('http://localhost:3005/api/skills')
+      .then(r => r.json())
+      .then(data => {
+        if (data.skills) setSkills(data.skills.map((s: any, i: number) => ({
+          id: i, name: s.name, source: 'Local', category: 'Universal', description: s.description,
+        })));
+      })
+      .catch(() => {});
+  }, [backendStatus]);
 
   useEffect(() => {
     if (config.projectPath && backendStatus === 'online') refreshFiles();
@@ -319,6 +328,7 @@ const App: React.FC = () => {
       agent: assignment.agentId,
       taskName: assignment.task,
       taskId: String(assignmentId),
+      skills: JSON.stringify(assignment.skillLoadout),
     });
     const es = new EventSource(`http://localhost:3005/api/execute-mission?${qs}`);
     es.onmessage = (event) => {
@@ -483,24 +493,17 @@ const App: React.FC = () => {
           </SidebarSection>
 
           {/* SKILLS */}
-          <SidebarSection title="Skills" addable>
-            <div style={{ background: '#2a2c33', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.4, color: '#5a5c66', textTransform: 'uppercase', marginBottom: 4 }}>Universal</div>
-                {skills.filter(s => s.category === 'Universal').map(s => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#b3b5bd', padding: '2px 0' }}>
-                    <CheckCircle size={13} color="#3ba55d" />{s.name}
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.4, color: '#5a5c66', textTransform: 'uppercase', marginBottom: 4 }}>Task Pool</div>
-                {skills.filter(s => s.category === 'Task-Specific').map(s => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#b3b5bd', padding: '2px 0' }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#5a5c66', display: 'inline-block' }} />{s.name}
-                  </div>
-                ))}
-              </div>
+          <SidebarSection title={`Skills ${skills.length > 0 ? `(${skills.length})` : ''}`} addable>
+            <div style={{ background: '#2a2c33', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 200, overflow: 'auto' }}>
+              {skills.length === 0 && (
+                <div style={{ fontSize: 12, color: '#5a5c66', fontStyle: 'italic', padding: '4px 2px' }}>Loading from ~/.agents/skills…</div>
+              )}
+              {skills.map(s => (
+                <div key={s.id} title={s.description || s.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#b3b5bd', padding: '2px 2px', cursor: 'default' }}>
+                  <CheckCircle size={11} color="#3ba55d" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                </div>
+              ))}
             </div>
           </SidebarSection>
         </div>

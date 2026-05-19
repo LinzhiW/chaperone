@@ -3,6 +3,7 @@ import cors from 'cors';
 import { simpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { GoogleGenerativeAI, Tool } from '@google/generative-ai';
 import { exec } from 'child_process';
 import dotenv from 'dotenv';
@@ -35,6 +36,38 @@ interface PanelSession {
 const panelSessions = new Map<string, PanelSession>();
 const activePanels  = new Set<string>();  // panels with live SSE connection
 
+// --- Skill Loadout (T4) ---
+const getSkillsDir = () =>
+  process.env.SKILLS_PATH || path.join(os.homedir(), '.agents', 'skills');
+
+const listSkills = (): { name: string; description: string }[] => {
+  const dir = getSkillsDir();
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => fs.statSync(path.join(dir, f)).isDirectory())
+    .map(name => {
+      const skillFile = path.join(dir, name, 'SKILL.md');
+      let description = '';
+      if (fs.existsSync(skillFile)) {
+        const m = fs.readFileSync(skillFile, 'utf-8').match(/description:\s*"([^"]+)"/);
+        if (m) description = m[1];
+      }
+      return { name, description };
+    });
+};
+
+const readSkillContent = (skillName: string): string | null => {
+  const dir = getSkillsDir();
+  if (!fs.existsSync(dir)) return null;
+  const normalized = skillName.toLowerCase().replace(/[\s_]+/g, '-');
+  const match = fs.readdirSync(dir).find(f =>
+    f.toLowerCase() === normalized || f.toLowerCase() === skillName.toLowerCase()
+  );
+  if (!match) return null;
+  const skillFile = path.join(dir, match, 'SKILL.md');
+  return fs.existsSync(skillFile) ? fs.readFileSync(skillFile, 'utf-8') : null;
+};
+
 // --- Agent Tools ---
 const runShell = (command: string, workspacePath: string): Promise<string> => {
   return new Promise((resolve) => {
@@ -61,6 +94,8 @@ const writeFile = (filePath: string, content: string, workspacePath: string): st
 
 // --- Endpoints ---
 app.get('/api/status', (req, res) => res.json({ status: 'online' }));
+
+app.get('/api/skills', (req, res) => res.json({ skills: listSkills() }));
 
 app.get('/api/files', (req, res) => {
   const projectPath = req.query.path as string;
@@ -91,7 +126,7 @@ app.post('/api/approve-action', (req, res) => {
 });
 
 app.get('/api/execute-mission', async (req, res) => {
-  const { workspacePath, agent, taskName, taskId } = req.query as any;
+  const { workspacePath, agent, taskName, taskId, skills } = req.query as any;
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -112,15 +147,35 @@ app.get('/api/execute-mission', async (req, res) => {
       ]
     }];
 
-    const model = genAI.getGenerativeModel({ model: modelId, tools });
+    // Build system instruction with skill loadout
+    const skillNames: string[] = skills ? JSON.parse(skills) : [];
+    const loadedSkills = skillNames
+      .map(name => { const c = readSkillContent(name); return c ? `\n=== SKILL: ${name} ===\n${c}` : null; })
+      .filter(Boolean) as string[];
+
+    const systemInstruction = [
+      `You are ${agent}, a specialized development agent.`,
+      `Mission: ${taskName}`,
+      `Workspace: ${workspacePath}`,
+      loadedSkills.length > 0
+        ? `\nYou have the following skills loaded — follow their guidance:\n${loadedSkills.join('\n')}`
+        : '',
+      '\nUse tools to act. Always state your intent before calling a tool.',
+    ].join('\n');
+
+    const model = genAI.getGenerativeModel({ model: modelId, tools, systemInstruction });
     const chat = model.startChat();
 
     // Store session so nudge endpoint can continue the conversation later
     panelSessions.set(taskId, { chat, workspacePath });
     activePanels.add(taskId);
-    sendEvent('log', { log: `> [SYSTEM] Agent initialized using ${modelId}.` });
 
-    let result = await chat.sendMessage(`You are ${agent}. Mission: ${taskName}. Workspace: ${workspacePath}. Use tools to act. Always explain your intent.`);
+    const skillLog = loadedSkills.length > 0
+      ? ` · skills: ${skillNames.join(', ')}`
+      : '';
+    sendEvent('log', { log: `> [SYSTEM] Agent initialized (${modelId}${skillLog}).` });
+
+    let result = await chat.sendMessage('Begin. State your plan first.');
     for (let i = 0; i < 10; i++) {
       const response = await result.response;
       const calls = response.functionCalls();
@@ -161,8 +216,10 @@ app.post('/api/ceo/chat', async (req, res) => {
 
   try {
     const fileList = files && files.length > 0 ? files.join(', ') : "None";
-    const systemPrompt = `You are the Project Orchestrator (CEO) of a multi-agent development platform.
+    const availableSkills = listSkills().map(s => s.name).join(', ') || 'none loaded';
+    const systemPrompt = `You are the Project Orchestrator (PM) of a multi-agent development platform.
 Context: Workspace files: ${fileList}.
+Available skills (use these exact names in skill_loadout): ${availableSkills}.
 
 When the user describes a goal or feature request, produce a structured task plan.
 Output the plan as a JSON array wrapped in <<<TASK_PLAN>>> markers, then give a brief explanation.
