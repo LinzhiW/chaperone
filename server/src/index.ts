@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { GoogleGenerativeAI, Tool } from '@google/generative-ai';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import dotenv from 'dotenv';
 import { shouldUseSearchGrounding, generateContentWithGoogleSearch } from './utils/googleSearchGrounding';
 
@@ -290,6 +290,38 @@ Rules:
   }
 });
 
+// --- Branch status (T6) ---
+app.get('/api/branch-status', async (req, res) => {
+  const { workspacePath, branches } = req.query as any;
+  if (!workspacePath || !branches) return res.status(400).json({ error: 'Missing params' });
+
+  const branchList: string[] = JSON.parse(branches);
+  const results: Record<string, { commits: number; files: number; ahead: number }> = {};
+
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return res.json({ branches: {} });
+
+    for (const branch of branchList) {
+      try {
+        // Commits on this branch not on main
+        const log = await git.log({ from: 'main', to: branch });
+        const diff = await git.diffSummary([`main...${branch}`]);
+        results[branch] = {
+          commits: log.total,
+          files: diff.files.length,
+          ahead: log.total,
+        };
+      } catch {
+        results[branch] = { commits: 0, files: 0, ahead: 0 };
+      }
+    }
+    res.json({ branches: results });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Nudge a worker (T3) ---
 // Continues the panel's existing ChatSession after the main execution loop.
 app.post('/api/panel/:panelId/nudge', async (req, res) => {
@@ -318,6 +350,150 @@ app.post('/api/panel/:panelId/nudge', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- Init project ---
+app.post('/api/init-project', (req, res) => {
+  const { projectPath } = req.body;
+  if (!projectPath) return res.status(400).json({ error: 'Missing projectPath' });
+  try {
+    const acDir = path.join(projectPath, '.agent-company');
+    fs.mkdirSync(acDir, { recursive: true });
+    const starters: Record<string, string> = {
+      'PRD.md': '# Product Requirements Document\n\n_Created by Agent Company. PM will populate this as you brief missions._\n',
+      'SOP.md': '# Standard Operating Procedure\n\n_Created by Agent Company. PM will populate this with team norms._\n',
+      'Dev log.md': '# Development Log\n\n_Created by Agent Company. Reviewer reports will be appended here after each archived mission._\n',
+    };
+    for (const [name, content] of Object.entries(starters)) {
+      const p = path.join(acDir, name);
+      if (!fs.existsSync(p)) fs.writeFileSync(p, content);
+    }
+    res.json({ success: true, path: acDir });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Add skill ---
+app.post('/api/add-skill', (req, res) => {
+  const { name, content } = req.body;
+  if (!name || !content) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const slug = name.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const skillDir = path.join(getSkillsDir(), slug);
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content);
+    res.json({ success: true, name: slug });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Create PR (T8) ---
+app.post('/api/create-pr', (req, res) => {
+  const { workspacePath, branch, title, body } = req.body;
+  if (!workspacePath || !branch || !title) {
+    return res.status(400).json({ error: 'Missing params' });
+  }
+  execFile('gh', ['pr', 'create', '-B', 'main', '-H', branch, '--title', title, '--body', body || ''],
+    { cwd: workspacePath },
+    (error, stdout, stderr) => {
+      if (error) return res.status(500).json({ error: stderr.trim() || error.message });
+      const url = stdout.trim().split('\n').pop() || '';
+      res.json({ url });
+    }
+  );
+});
+
+// --- Reviewer (T7) ---
+app.get('/api/reviewer', async (req, res) => {
+  const { workspacePath, branches, tasks } = req.query as any;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  const apiKey = getApiKey();
+  if (!apiKey) { send('log', { log: '[ERROR] API key missing.' }); return res.end(); }
+  if (!workspacePath || !branches) { send('log', { log: '[ERROR] Missing params.' }); return res.end(); }
+
+  const branchList: string[] = JSON.parse(branches);
+  const taskMap: Record<string, string> = tasks ? JSON.parse(tasks) : {};
+
+  send('log', { log: `[REVIEWER] Starting cross-branch review — ${branchList.length} branch(es)…` });
+
+  const diffs: Record<string, string> = {};
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) {
+      send('log', { log: '[ERROR] Workspace is not a git repository.' });
+      return res.end();
+    }
+    for (const branch of branchList) {
+      try {
+        send('log', { log: `[REVIEWER] Reading diff for ${branch}…` });
+        const diff = await git.diff([`main...${branch}`]);
+        diffs[branch] = diff?.trim() || '(no changes vs main)';
+      } catch (e: any) {
+        diffs[branch] = `(diff unavailable: ${e.message})`;
+        send('log', { log: `[REVIEWER] Warning: ${branch} diff failed` });
+      }
+    }
+  } catch (err: any) {
+    send('log', { log: `[ERROR] git error: ${err.message}` });
+    return res.end();
+  }
+
+  const diffSections = branchList.map(b =>
+    `=== Branch: ${b} ===\nTask: ${taskMap[b] || 'Unknown'}\n\n${diffs[b]}`
+  ).join('\n\n---\n\n');
+
+  const prompt = `You are a senior code reviewer for a multi-agent development platform.
+Review the following git diffs from parallel development branches.
+
+${diffSections}
+
+Return ONLY a JSON array of review annotations. No prose before or after.
+Each entry must match this schema exactly:
+{
+  "type": "bug" | "note" | "bloat" | "missing",
+  "branch": "<branch-name>",
+  "file": "<file-path or null>",
+  "line": "<line number or range, or null>",
+  "message": "<concise actionable annotation, max 120 chars>"
+}
+
+Type meanings:
+- "bug": logic errors, incorrect behavior, crashes, security issues
+- "note": informational observations, style, alternative approaches
+- "bloat": dead code, unnecessary complexity, unused imports
+- "missing": missing error handling, tests, docs, or core functionality
+
+If a branch has no diff, include one "note" annotation saying so.`;
+
+  send('log', { log: '[REVIEWER] Analyzing with Gemini…' });
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: getModelId() });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+
+    send('log', { log: '[REVIEWER] Analysis complete. Parsing annotations…' });
+
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      send('log', { log: '[ERROR] Could not parse review output. Raw: ' + text.substring(0, 200) });
+      return res.end();
+    }
+    const annotations = JSON.parse(jsonMatch[0]);
+    send('annotations', { annotations });
+    send('log', { log: `[REVIEWER] Done — ${annotations.length} annotation(s).` });
+  } catch (err: any) {
+    send('log', { log: `[ERROR] Review failed: ${err.message}` });
+  }
+  res.end();
 });
 
 app.listen(port, () => console.log(`Backend at ${port}`));
