@@ -1,9 +1,3 @@
-> ⚠️ **SUPERSEDED (2026-06-09).** This is the original T1–T8 single-stack (Gemini)
-> plan — all 8 tasks are done. The project has since pivoted to a provider-agnostic
-> architecture. **For the current plan see [TODO.md](TODO.md); for the spec see
-> [PRD.md](PRD.md) v2.1; for status see [PROJECT_STATE.md](PROJECT_STATE.md).**
-> Kept for history only. The "铁律" below still hold and informed the new HITL model.
-
 # Agent Company — Development Plan
 
 **版本：** v0.1 草稿

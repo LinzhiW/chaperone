@@ -1,5 +1,65 @@
 # Change Log - Agent Company
 
+## [2026-06-09] — v2 direction reset: provider-agnostic + skill-loadout spec
+
+### Changed (docs only — no code yet)
+- **PRD rewritten to v2.1**: provider-agnostic platform (one pipeline + thin model
+  adapters; Claude is *just a model*, no Agent SDK). Vendors = interchangeable model
+  backends (Claude/GPT/Gemini/DeepSeek).
+- **HITL model corrected**: from per-tool-call approval → **checkpoint-gated
+  autonomy** (bounded autonomy + sensitive-action gate + hard stop at task boundary
+  + human-gated merge). Added **per-worker mode** (default Auto). Anti-Paperclip
+  invariant: never act/spend invisibly.
+- **Two coordination layers** documented: communication (fan-out/fan-in) + integration
+  (git). Git policy: load-bearing; no-git → auto-`git init` or single-worker mode.
+- **Skill system spec locked** (PRD §7.2 + §7.2.2): three-tier authority (human >
+  PM-suggest > system base), base set + ~8–10 custom slots, one neutral `SKILL.md`
+  injected uniformly (no per-engine translation), save-gated edits, mid-mission edit =
+  gate, PM suggest→accept·mount, token cost shown.
+- **Audit**: global "designed vs built" gap table — the Skills system (4 screens) +
+  Recruit + PM clarify are designed but unbuilt. Recorded in PROJECT_STATE.
+- **New**: [TODO.md](TODO.md) phased backlog (P0–P6). DEV_PLAN.md marked superseded;
+  PLAN_v2.md skill sections marked superseded by PRD.
+
+### Not changed
+- No production code touched this round. `server/src/index.ts` + `src/App.tsx`
+  unchanged; refactor begins at TODO P1 (`ModelProvider` interface).
+
+---
+
+## [2026-05-19] — T8: GitHub PR trigger
+
+### Added
+- `POST /api/create-pr` endpoint: accepts `workspacePath`, `branch`, `title`, `body`; uses `execFile('gh', [...])` with args as array (no shell injection); returns `{ url }` from `gh pr create` stdout
+- `ReviewerPanel` now has a live "Create PRs →" button: fires one request per assignment branch, PR body is pre-filled with branch annotations from the reviewer report
+- PR results appear inline above the decision bar: each branch shows either a clickable GitHub PR URL or an error message
+- Button states: `Create PRs →` → `Creating…` → `PRs created ✓`
+
+---
+
+## [2026-05-19] — T7: Reviewer Panel
+
+### Added
+- `GET /api/reviewer` SSE endpoint: accepts `workspacePath`, `branches` (JSON array), `tasks` (JSON map). Pulls `git diff main...{branch}` for each branch, sends all diffs to Gemini with a structured annotation prompt, streams `log` events then a single `annotations` event
+- `ReviewAnnotation` type: `{ type: 'bug'|'note'|'bloat'|'missing'; branch; file?; line?; message }`
+- `reviewerLog?: string[]` and `reviewerAnnotations?: ReviewAnnotation[]` added to `Mission` (persisted in localStorage)
+- `ReviewerPanel` component: loading state (streams log), then branch-tab view with annotation list (4 type chips: 🐛 Bug / ℹ Note / 🧹 Bloat / ❓ Missing) and decision bar (Send back / Archive to PM / Create PRs placeholder)
+- `callReviewer(missionId)` — sets mission to `reviewing` status, opens SSE stream, stores annotations
+- `archiveMission(missionId)` — sets status to `done`, navigates to PM panel, injects archive message into PM chat
+- Mission strip and sidebar now show 3 states: `● Running` / `◑ Under review` / `○ Archived`
+
+---
+
+## [2026-05-19] — T6: Dashboard branch status
+
+### Added
+- `GET /api/branch-status` endpoint accepts `workspacePath` + `branches` (JSON array); uses `simpleGit` to compute `commits`, `files`, `ahead` per branch vs `main`; non-fatal per-branch failures return zeros
+- `branchStats` state (`Record<branchName, {commits, files, ahead}>`) in App
+- Polling effect: fires on mission view entry, polls `/api/branch-status` every 15s for the active mission's branches; stops when view changes
+- WorkerTile accepts optional `branchStat` prop; header shows green `↑N · Mf` chip when the branch has commits or changed files
+
+---
+
 ## [2026-05-19] — T5: Git branch auto-checkout
 
 ### Added

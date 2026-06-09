@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Company · Wireframes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="wf-styles.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #ece8df; font-family: "Inter", sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="wf-shared.jsx"></script>
+<script type="text/babel" src="wf-current.jsx"></script>
+<script type="text/babel" src="wf-onboarding.jsx"></script>
+<script type="text/babel" src="wf-pm.jsx"></script>
+<script type="text/babel" src="wf-mission.jsx"></script>
+<script type="text/babel" src="wf-phase2.jsx"></script>
+<script type="text/babel" src="wf-skills-data.jsx"></script>
+<script type="text/babel" src="wf-skills.jsx"></script>
+<script type="text/babel" src="wf-recruit-hitl.jsx"></script>
+<script type="text/babel" src="wf-worker-brief.jsx"></script>
+
+<script type="text/babel">
+const AB_W = 1280;
+const AB_H = 800;
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="baseline" title="0 · Baseline · current state" subtitle=" ">
+        <DCArtboard id="current-dashboard" label="0 · CEO Chat dashboard (today)" width={AB_W} height={AB_H}>
+          <CurrentDashboard />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-onboarding" title="1 · Onboarding · first time opening Agent Company" subtitle="No project → pick one → PM scans codebase → ready for first mission.">
+        <DCArtboard id="onb-welcome" label="1 · Welcome (no project)" width={AB_W} height={AB_H}>
+          <Onboarding_Welcome />
+        </DCArtboard>
+        <DCArtboard id="onb-scan" label="2 · PM onboarding scan (HITL on every read)" width={AB_W} height={AB_H}>
+          <Onboarding_PMScan />
+        </DCArtboard>
+        <DCArtboard id="onb-ready" label="3 · Project ready · no missions yet" width={AB_W} height={AB_H}>
+          <Onboarding_Ready />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-start-mission" title="2 · Starting a mission · PM Chat → Brief → Plan" subtitle="User finds PM in the TEAM section. PM clarifies vague briefs into a scoped plan, then drafts an assignment plan for user approval.">
+        <DCArtboard id="pm-chat" label="4 · PM panel · Chat (idle / between missions)" width={AB_W} height={AB_H}>
+          <PM_Chat />
+        </DCArtboard>
+        <DCArtboard id="pm-brief" label="5 · PM · briefing a new mission (clarify scope)" width={AB_W} height={AB_H}>
+          <PM_BriefMission />
+        </DCArtboard>
+        <DCArtboard id="pm-plan" label="6 · PM · drafting Mission Plan (sticky comments + Dispatch)" width={AB_W} height={AB_H}>
+          <PM_MissionPlan />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-running" title="3 · Mission running · workers execute, PM is gone" subtitle="User lands on 2×2 worker dashboard. Drill into one worker for full chat. HITL is per tool call — approve, reject + rewrite, or reject with feedback.">
+        <DCArtboard id="mission-dash" label="7 · Mission · running dashboard (no PM here)" width={AB_W} height={AB_H}>
+          <Mission_Dashboard />
+        </DCArtboard>
+        <DCArtboard id="worker-chat" label="8 · Worker chat · W1 deep-dive (single worker)" width={AB_W} height={AB_H}>
+          <Worker_Chat />
+        </DCArtboard>
+        <DCArtboard id="hitl-reject" label="9 · HITL · reject + rewrite (the other half of approve)" width={AB_W} height={AB_H}>
+          <HITL_Reject />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-ending" title="4 · Mission ending · workers done → Reviewer → Archive" subtitle="All workers green → user calls Reviewer → reads cross-branch report with 4-type annotations → decides iterate vs. archive. Archive writes to PM dev log.">
+        <DCArtboard id="mission-done" label="10 · Mission · all workers done · ready to archive" width={AB_W} height={AB_H}>
+          <Mission_Done />
+        </DCArtboard>
+        <DCArtboard id="reviewer-full" label="11 · Reviewer · cross-branch report (4-type notes)" width={AB_W} height={AB_H}>
+          <Mission_Reviewer_Full />
+        </DCArtboard>
+        <DCArtboard id="mission-archived" label="12 · After archive · sidebar grays · PM speaks first" width={AB_W} height={AB_H}>
+          <Mission_Archived />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-pm-memory" title="5 · PM memory · the markdown files PM maintains" subtitle="PM proposes edits to PRD/SOP after each archive · user HITL-approves per section. Dev log is the append-only feed of past reports.">
+        <DCArtboard id="pm-prd" label="13 · PM · PRD.md (structured · HITL diff)" width={AB_W} height={AB_H}>
+          <PM_PRD />
+        </DCArtboard>
+        <DCArtboard id="pm-sop" label="14 · PM · SOP.md (structured · stable)" width={AB_W} height={AB_H}>
+          <PM_SOP />
+        </DCArtboard>
+        <DCArtboard id="pm-devlog" label="15 · PM · Dev log.md (read · edit raw)" width={AB_W} height={AB_H}>
+          <PM_DevLog />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="flow-team-skills" title="6 · Team & Skills · recruit workers, manage the skill library" subtitle="Recruit = role preset + skill loadout in 3 steps. Skills are reusable .md files; can be uploaded, linked from GitHub, or pasted. Sets = composable equipment.">
+        <DCArtboard id="recruit-worker" label="16 · Recruit · new worker (role · skills · identity)" width={AB_W} height={AB_H}>
+          <Recruit_Worker />
+        </DCArtboard>
+        <DCArtboard id="skills-lib" label="17 · Skills · library (search · category · source)" width={AB_W} height={AB_H}>
+          <Skills_Library />
+        </DCArtboard>
+        <DCArtboard id="skills-import" label="18 · Skill · import / new (upload · GitHub · paste)" width={AB_W} height={AB_H}>
+          <Skills_Import />
+        </DCArtboard>
+        <DCArtboard id="skills-loadout" label="19 · Loadout · edit a worker's equipped skills" width={AB_W} height={AB_H}>
+          <Skills_Loadout />
+        </DCArtboard>
+        <DCArtboard id="skills-compose" label="20 · Compose · build a reusable skill set" width={AB_W} height={AB_H}>
+          <Skills_ComposeSet />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

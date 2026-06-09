@@ -1,0 +1,336 @@
+
+=== PM_DevLog ===
+function PM_DevLog() {
+  return (
+    <div className="wf" style={{ flexDirection: "row" }}>
+      <VariantTag>6 · PM · Dev log.md (read+edit)</VariantTag>
+      <MissionRail />
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <TopBar title="PM · Dev log.md" />
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <Sidebar active="mission:dark-mode" />
+          <PMShell activeTab="devlog">
+            <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 0, padding: 0 }}>
+
+              {/* Left rail · entry list */}
+              <div style={{ flex: "0 0 220px", borderRight: "1.5px solid var(--rule)", display: "flex", flexDirection: "column", background: "var(--paper-2)" }}>
+                <div style={{ padding: "10px 12px 6px", fontSize: 10, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>
+                  Entries · 12
+                </div>
+                <div className="wf-scroll" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
+                  <DevLogItem date="2026-05-19 · 14:48" title="Dark mode + JSON + hotkeys" badge="NEW" selected />
+                  <DevLogItem date="2026-05-17 · 16:02" title="Migrate to Vite" />
+                  <DevLogItem date="2026-05-14 · 09:30" title="Add CI on PR + lint gate" />
+                  <DevLogItem date="2026-05-12 · 11:14" title="Refactor todos store to Zustand" />
+                  <DevLogItem date="2026-05-09 · 17:51" title="Initial scaffold + auth" />
+                </div>
+              </div>
+
+              {/* Doc body */}
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                {/* Doc head */}
+                <div style={{ padding: "10px 18px", borderBottom: "1.5px solid var(--rule)", background: "var(--paper-2)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>Dev log.md</span>
+                  <span style={{ fontSize: 11, color: "var(--ink-3)" }}>· /Dev log.md</span>
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    <span style={{
+                      fontSize: 10, padding: "2px 6px", borderRadius: 3,
+                      background: "var(--approve-soft)", color: "var(--approve)", border: "1px solid var(--approve)", fontWeight: 600
+                    }}>● reading</span>
+                    <button className="btn" style={{ fontSize: 11, padding: "3px 10px", borderRadius: 3, border: "1.5px solid var(--rule)", background: "var(--paper)" }}>✎ Edit raw markdown</button>
+                  </span>
+                </div>
+
+                {/* Scrollable doc */}
+                <div className="wf-scroll" style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
+                  <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                    {/* New entry — highlighted */}
+                    <div style={{ padding: "14px 18px", border: "1.5px solid var(--review)", borderRadius: 5, background: "#fff8ec", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, padding: "2px 6px", borderRadius: 99, background: "var(--review)", color: "var(--paper)" }}>NEW</span>
+                        <span style={{ fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>2026-05-19 · 14:48 · archived by you</span>
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Dark mode + JSON export + keyboard shortcuts</h3>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <span className="branch-chip">feat/dark-mode</span>
+                        <span className="branch-chip">feat/json-export</span>
+                        <span className="branch-chip">feat/keyboard-shortcuts</span>
+                        <span className="branch-chip">feat/tests</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6 }}>
+                        Mission completed in 4 branches. Reviewer surfaced <strong>5 annotations</strong>; user resolved all
+                        before archiving. Notable: W2 fixed empty-list crash inline before archive; W4 picked up the missing
+                        archived-case test on resend.
+                      </p>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
+                        <span style={{ color: "var(--ink-3)" }}>Annotations resolved →</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, 
+
+=== DevLogItem ===
+function DevLogItem({ date, title, badge, selected }) {
+  return (
+    <div style={{
+      padding: "8px 12px",
+      borderBottom: "1px solid var(--rule-soft)",
+      background: selected ? "var(--paper)" : "transparent",
+      borderLeft: selected ? "3px solid var(--pm)" : "3px solid transparent",
+      display: "flex", flexDirection: "column", gap: 2, cursor: "pointer"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--ink-3)" }}>{date}</span>
+        {badge && <span style={{
+          marginLeft: "auto", fontSize: 8, padding: "1px 5px", borderRadius: 99,
+          background: "var(--review)", color: "var(--paper)", fontWeight: 700, letterSpacing: 0.4
+        }}>{badge}</span>}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: selected ? 600 : 500 }}>{title}</div>
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7 · PM · PRD.md tab (mode B: structured sections + HITL diff)
+
+
+=== PM_PRD ===
+function PM_PRD() {
+  return (
+    <div className="wf" style={{ flexDirection: "row" }}>
+      <VariantTag>7 · PM · PRD.md (structured + HITL)</VariantTag>
+      <MissionRail />
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <TopBar title="PM · PRD.md" />
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <Sidebar active="mission:dark-mode" />
+          <PMShell activeTab="prd">
+            <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+
+              {/* Section nav */}
+              <div style={{ flex: "0 0 180px", borderRight: "1.5px solid var(--rule)", background: "var(--paper-2)", padding: "12px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Sections</div>
+                <PRDNav label="§ Overview" />
+                <PRDNav label="§ Goals" />
+                <PRDNav label="§ Personas" />
+                <PRDNav label="§ Features" active pending={2} />
+                <PRDNav label="§ Non-goals" pending={1} />
+                <PRDNav label="§ Constraints" />
+                <PRDNav label="§ Open questions" />
+                <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <button className="btn" style={{ fontSize: 11, padding: "5px 8px", borderRadius: 3, border: "1.5px dashed var(--rule-soft)", background: "var(--paper)", color: "var(--ink-3)" }}>＋ Add section</button>
+                  <button className="btn" style={{ fontSize: 10, padding: "4px 8px", borderRadius: 3, border: "1px solid var(--rule-soft)", background: "var(--paper)", color: "var(--ink-3)" }}>↗ View raw markdown</button>
+                </div>
+              </div>
+
+              {/* Doc */}
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+
+                {/* PM proposed change banner */}
+                <div style={{ padding: "8px 18px", background: "var(--pm-soft)", borderBottom: "1.5px solid var(--pm)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "var(--pm)", fontWeight: 700 }}>⚠ PM proposed 3 edits to this PRD</span>
+                  <span style={{ fontSize: 11, color: "var(--ink-2)" }}>after archiving the dark-mode mission. Each section change shows a diff — approve / reject per section.</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--ink-3)" }}>HITL · your call</span>
+                </div>
+
+                {/* Sections */}
+                <div className="wf-scroll" style={{ flex: 1, overflow: "auto", padding: "16px 22px" }}>
+                  <div style={{ maxWidth: 660, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }} data-comment-anchor="917faec92b-div-472-19">
+
+                    {/* Section: Overview (unchanged) */}
+                    <PRDSection title="Overview" subtitle="What this product is, in one paragraph.">
+                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
+                        A local-first React TODO app. Lives in <span className="mono" style={{ fontSize: 11 }}>~/todo-app</span>.
+                        Single user (you). Focus: keyboard-first, dark mode, exportable.
+                      </p>
+                    </PRDSection>
+
+                    {/* Section: Features — has pending PM edits */}
+                    <PRDSection
+                      title="Features"
+                      subtitle="What the product does. Updated as missions are archived."
+                      pending={2}>
+                      
+                      {/* existing bullet — unchanged */}
+                      <PRDBullet>Add / edit / archive todos with optimistic save.</PRDBullet>
+                      <PRDBullet>Filter by tag (local persistence).</PRDBullet>
+
+                      {/* PM addition — pending */}
+                      <PRDDiff add>
+                        <strong>Dark mode</strong> via CSS variables. Toggle in Header.
+                        Persisted per-device.
+                      </PRDDiff>
+                      <PRDDiff add>
+                        <strong>JSON export</strong> from Header menu. Excludes archived
+                        by default; "include archived" toggle available.
+                      </PRDDiff>
+
+                      {/* Unchanged bullet */}
+                      <PRDBullet>Hotkey: <span className="mono" style={{ fontSize: 11 }}>cmd+n</span> new, <span className="mono" style={{ fontSize: 11 }}>cmd+f</span> filter.</PRDBullet>
+
+                      <div style={{ marginTop: 8, padding: "6px 8px", display: "flex", alignItems: "center", gap: 8, background: "var(--paper-2)", borderRadius: 3, border: "1px dashed var(--rule-soft)" }}>
+                        <span style={{ fontSize: 
+
+=== PRDNav ===
+function PRDNav({ label, active, pending }) {
+  return (
+    <div style={{
+      padding: "5px 8px", borderRadius: 3, fontSize: 12, cursor: "pointer",
+      background: active ? "var(--pm)" : "transparent",
+      color: active ? "var(--paper)" : "var(--ink-2)",
+      display: "flex", alignItems: "center", gap: 6,
+      fontWeight: active ? 600 : 500
+    }}>
+      <span style={{ flex: 1 }}>{label}</span>
+      {pending &&
+      <span style={{
+        minWidth: 16, padding: "0 5px", borderRadius: 99, fontSize: 9, fontWeight: 700,
+        background: active ? "var(--paper)" : "var(--review)",
+        color: active ? "var(--review)" : "var(--paper)",
+        textAlign: "center"
+      }}>{pending}</span>
+      }
+    </div>);
+
+}
+
+
+
+=== PRDSection ===
+function PRDSection({ title, subtitle, pending, children }) {
+  return (
+    <section style={{
+      border: pending ? "1.5px solid var(--review)" : "1.5px solid var(--rule)",
+      borderRadius: 5,
+      background: "var(--paper)",
+      padding: "12px 16px",
+      display: "flex", flexDirection: "column", gap: 8,
+      position: "relative"
+    }}>
+      {pending &&
+      <span style={{
+        position: "absolute", top: -9, right: 12,
+        background: "var(--review)", color: "var(--paper)",
+        fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+        padding: "2px 7px", borderRadius: 99
+      }}>{pending} pending</span>
+      }
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>§ {title}</h3>
+        <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{subtitle}</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-3)", cursor: "pointer" }}>✎ edit</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {children}
+      </div>
+    </section>);
+
+}
+
+
+
+=== PRDBullet ===
+function PRDBullet({ children }) {
+  return (
+    <div style={{ display: "flex", gap: 6, fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+      <span style={{ color: "var(--ink-3)" }}>•</span>
+      <span style={{ flex: 1 }}>{children}</span>
+    </div>);
+
+}
+
+
+
+=== PRDDiff ===
+function PRDDiff({ add, del, children }) {
+  return (
+    <div style={{
+      display: "flex", gap: 6,
+      background: add ? "var(--approve-soft)" : "#f7d8d3",
+      color: add ? "var(--approve)" : "var(--warn)",
+      padding: "4px 8px", borderRadius: 3, fontSize: 12.5, lineHeight: 1.5,
+      border: `1px solid ${add ? "var(--approve)" : "var(--warn)"}`
+    }}>
+      <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>{add ? "+" : "−"}</span>
+      <span style={{ flex: 1, color: "var(--ink)" }}>{children}</span>
+      <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>PM</span>
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8 · PM · SOP.md tab (mode B: structured)
+
+
+=== PM_SOP ===
+function PM_SOP() {
+  return (
+    <div className="wf" style={{ flexDirection: "row" }}>
+      <VariantTag>8 · PM · SOP.md (structured)</VariantTag>
+      <MissionRail />
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <TopBar title="PM · SOP.md" />
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <Sidebar active="mission:dark-mode" />
+          <PMShell activeTab="sop">
+            <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+
+              {/* Section nav */}
+              <div style={{ flex: "0 0 180px", borderRight: "1.5px solid var(--rule)", background: "var(--paper-2)", padding: "12px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Categories</div>
+                <PRDNav label="§ Naming" />
+                <PRDNav label="§ Branching" active />
+                <PRDNav label="§ Testing" />
+                <PRDNav label="§ Commits" />
+                <PRDNav label="§ Code style" />
+                <PRDNav label="§ Review checklist" />
+                <div style={{ marginTop: "auto" }}>
+                  <button className="btn" style={{ fontSize: 11, padding: "5px 8px", borderRadius: 3, border: "1.5px dashed var(--rule-soft)", background: "var(--paper)", color: "var(--ink-3)", width: "100%" }}>＋ Add category</button>
+                </div>
+              </div>
+
+              {/* Doc */}
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+
+                {/* Header strip */}
+                <div style={{ padding: "8px 18px", background: "var(--paper-2)", borderBottom: "1.5px solid var(--rule)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>SOP.md · § Branching</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--ink-3)" }}>last touched 2026-05-14 · 3 missions ago</span>
+                </div>
+
+                <div className="wf-scroll" style={{ flex: 1, overflow: "auto", padding: "16px 22px" }}>
+                  <div style={{ maxWidth: 660, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                    <PRDSection title="Branching" subtitle="One worker = one branch. Never reuse.">
+                      <PRDBullet>Each <span className="mono" style={{ fontSize: 11 }}>worker</span> creates exactly one branch from <span className="mono" style={{ fontSize: 11 }}>main</span>.</PRDBullet>
+                      <PRDBullet>Naming: <span className="mono" style={{ fontSize: 11 }}>feat/&lt;mission-slug&gt;-&lt;short-scope&gt;</span></PRDBullet>
+                      <PRDBullet>Workers never push to <span className="mono" style={{ fontSize: 11 }}>main</span>. Reviewer + your decision is required to create PRs.</PRDBullet>
+                      <PRDBullet>PM never creates branches. PM only writes plan + maintains docs.</PRDBullet>
+                    </PRDSection>
+
+                    <PRDSection title="Commits" subtitle="Each tool-call cluster = one commit.">
+                      <PRDBullet>Conventional commits: <span className="mono" style={{ fontSize: 11 }}>feat: / fix: / chore: / docs: / test:</span></PRDBullet>
+                      <PRDBullet>Body line 1 ≤ 72 chars. Imperative ("add", not "added").</PRDBullet>
+                      <PRDBullet>Worker commits show <span className="mono" style={{ fontSize: 11 }}>[W&lt;n&gt;]</span> tag for cross-branch traceability.</PRDBullet>
+                    </PRDSection>
+
+                    <PRDSection title="Testing" subtitle="TDD when feasible. Test before HITL approves write.">
+                      <PRDBullet>Coverage minimum: <strong>80%</strong> on the touched files.</PRDBullet>
+                      <PRDBullet>Tests live next to source: <span className="mono" style={{ fontSize: 11 }}>foo.ts</span> ↔ <span className="mono" style={{ fontSize: 11 }}>foo.test.ts</span></PRDBullet>
+                      <PRDBullet>Reviewer will flag <strong>Missing</strong> for any new public function without a test.</PRDBullet>
+                    </PRDSection>
+
+                  </div>
+                </div>
+              </div>
+
+              {/* Right annotations */}
+              <div style={{
+                flex: "0 0 170px", borderLeft: "1px dashed var(--rule-soft)",
+                padding: "16px 10px", display: "flex", flexDirection: "column", gap: 16,
+                background: "var(--paper-2)"
+              }}>
+                <Note color="var(--pm)">
+                  ↖ same shape as<br />PRD: sections,<br />but here PM has<br />no pending edits<br />— stable doc
+                </Note>
+                <Note color="var(--ink-3)">
+                  ↑ SOP changes are<br />rare. usually only<br />after a Reviewer<br />flags 

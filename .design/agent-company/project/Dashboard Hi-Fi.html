@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Company · Dashboard (hi-fi)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --rail:      #17181c;
+    --col:       #1f2125;
+    --col-2:     #25272d;
+    --main:      #1b1c20;
+    --card:      #2a2c33;
+    --card-2:    #2f3138;
+    --border:    rgba(255,255,255,0.06);
+    --border-2:  rgba(255,255,255,0.10);
+
+    --text:      #e6e7ea;
+    --text-2:    #b3b5bd;
+    --text-3:    #7d808a;
+    --text-4:    #5a5c66;
+    --label:     #8a8d97;
+
+    --green:     #3ba55d;
+    --green-2:   #2e8a4d;
+    --blue:      #5b6cf2;
+    --violet:    #a78bfa;
+    --purple-dot:#7c6dff;
+
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--main);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 88px 340px 1fr;
+    height: 100vh;
+    width: 100%;
+  }
+
+  /* ────────────── RAIL ────────────── */
+  .rail {
+    background: var(--rail);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+    gap: 10px;
+  }
+  .rail-avatar {
+    width: 56px; height: 56px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6477ff 0%, #5b6cf2 50%, #7c6dff 100%);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    cursor: pointer;
+  }
+  .rail-divider {
+    width: 36px;
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 4px 0;
+  }
+  .rail-btn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: #2a2c33;
+    color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    border: none;
+    transition: background .15s, border-radius .15s;
+  }
+  .rail-btn:hover {
+    border-radius: 16px;
+    background: #2f3138;
+  }
+  .rail-spacer { flex: 1; }
+  .rail-icon-btn {
+    width: 48px; height: 48px;
+    color: var(--text-3);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: background .15s, color .15s;
+  }
+  .rail-icon-btn:hover { background: rgba(255,255,255,0.04); color: var(--text-2); }
+
+  /* ────────────── DASHBOARD COLUMN ────────────── */
+  .col {
+    background: var(--col);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .col-head {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .col-head-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .col-icon {
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 1px;
+  }
+  .col-icon span { width: 4px; border-radius: 1px; }
+
+  .col-body { flex: 1; overflow: auto; padding: 10px 14px 20px; }
+
+  /* Workspace card */
+  .workspace {
+    margin-top: 6px;
+    padding: 12px 14px;
+    background: var(--col-2);
+    border-radius: var(--r-md);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer;
+  }
+  .workspace:hover { background: #2a2c33; }
+  .workspace .ws-icon { color: var(--text-3); flex: 0 0 auto; }
+  .workspace .ws-text { flex: 1; min-width: 0; }
+  .workspace .ws-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--label);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .workspace .ws-path {
+    font-size: 14px;
+    color: var(--text-2);
+    font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .workspace .ws-chev { color: var(--text-4); flex: 0 0 auto; }
+
+  /* Sections */
+  .sec { margin-top: 18px; }
+  .sec-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 4px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sec-head .caret { color: var(--text-3); transition: transform .15s; }
+  .sec-head .title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--label);
+    text-transform: uppercase;
+  }
+  .sec-head .refresh, .sec-head .plus {
+    margin-left: auto;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--green);
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  .sec-head .refresh { color: var(--text-3); }
+  .sec-head .refresh:hover { color: var(--text-2); background: rgba(255,255,255,0.04); }
+  .sec-head .plus:hover { background: rgba(59,165,93,0.12); }
+
+  .sec-list { display: flex; flex-direction: column; gap: 2px; padding: 0 4px; }
+  .sec-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 14px;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .sec-item:hover { background: rgba(255,255,255,0.03); }
+  .sec-item .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--purple-dot);
+    flex: 0 0 auto;
+  }
+
+  /* Departments */
+  .dept-group { padding: 0 4px; display: flex; flex-direction: column; gap: 6px; }
+  .dept-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    padding: 2px 6px;
+  }
+  .dept-child {
+    font-size: 13px;
+    color: var(--text-3);
+    padding: 0 6px 0 22px;
+  }
+
+  /* Skills nested card */
+  .skills-card {
+    margin-top: 4px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .skill-group .skill-cap {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .skill-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px;
+    color: var(--text-2);
+  }
+  .skill-item .check { color: var(--green); flex: 0 0 auto; display: inline-flex; }
+  .skill-item .bullet {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-3);
+    flex: 0 0 auto;
+    margin-left: 1px; margin-right: 1px;
+  }
+
+  /* ────────────── MAIN PANE ────────────── */
+  .main {
+    background: var(--main);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    padding: 18px 22px 18px 22px;
+    gap: 14px;
+  }
+
+  /* CEO Chat card */
+  .ceo-card {
+    background: #232529;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .ceo-head {
+    padding: 16px 20px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ceo-badge {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: #2ea043;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.2);
+  }
+  .ceo-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .ceo-body {
+    padding: 22px 20px;
+    min-height: 340px;
+    flex: 1;
+    overflow: auto;
+  }
+  .ceo-bubble {
+    background: #2d2f36;
+    border-radius: 10px;
+    padding: 14px 18px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .ceo-composer {
+    margin: 0 20px 20px;
+    background: #2a2c33;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px 12px 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .ceo-composer input {
+    background: transparent;
+    border: none; outline: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+  }
+  .ceo-composer input::placeholder { color: var(--text-4); }
+  .ceo-send {
+    color: var(--text-3);
+    cursor: pointer;
+    flex: 0 0 auto;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    transition: color .15s, background .15s;
+  }
+  .ceo-send:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+
+  /* Active missions */
+  .mission-head {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 1.2px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 4px 4px;
+  }
+  .mission-head .term-glyph {
+    color: var(--text-3);
+    font-family: var(--mono);
+  }
+  .mission-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .mission-card {
+    background: #232529;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 16px 18px;
+    min-height: 64px;
+    display: flex; align-items: flex-start;
+  }
+  .mission-card .label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--text-3);
+    text-transform: uppercase;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.10); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ─── Mission rail ─── -->
+  <aside class="rail">
+    <div class="rail-avatar" title="Agent Company">AC</div>
+    <div class="rail-divider"></div>
+    <button class="rail-btn" title="New mission">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    </button>
+    <div class="rail-spacer"></div>
+    <div class="rail-icon-btn" title="Send / share">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2L11 13"/>
+        <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+      </svg>
+    </div>
+    <div class="rail-icon-btn" title="Settings">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </div>
+  </aside>
+
+  <!-- ─── Dashboard column ─── -->
+  <section class="col">
+    <div class="col-head">
+      <div class="col-icon" title="Dashboard">
+        <span style="height:18px;background:#3b4a8e"></span>
+        <span style="height:14px;background:#e8e9ed"></span>
+        <span style="height:20px;background:#3ba55d"></span>
+        <span style="height:12px;background:#c97a3a"></span>
+      </div>
+      <div class="col-head-title">Dashboard</div>
+    </div>
+
+    <div class="col-body">
+      <!-- Workspace card -->
+      <div class="workspace">
+        <span class="ws-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </span>
+        <div class="ws-text">
+          <div class="ws-label">Workspace</div>
+          <div class="ws-path">Open Folder…</div>
+        </div>
+        <span class="ws-chev">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </span>
+      </div>
+
+      <!-- Project files -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="caret">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <span class="title">Project Files</span>
+          <span class="refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="caret">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <span class="title">Sessions</span>
+          <span class="plus">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </span>
+        </div>
+        <div class="sec-list">
+          <div class="sec-item"><span class="dot"></span>Default Session</div>
+        </div>
+      </div>
+
+      <!-- Departments -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="caret">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <span class="title">Departments</span>
+        </div>
+        <div class="dept-group">
+          <div>
+            <div class="dept-name">Frontend Dept</div>
+            <div class="dept-child">- ui-worker</div>
+          </div>
+          <div>
+            <div class="dept-name">Backend Dept</div>
+            <div class="dept-child">- api-worker</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="sec">
+        <div class="sec-head">
+          <span class="caret">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+          <span class="title">Skills</span>
+          <span class="plus">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </span>
+        </div>
+        <div class="skills-card">
+          <div class="skill-group">
+            <div class="skill-cap">Universal</div>
+            <div class="skill-item">
+              <span class="check">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              TDD-Expert
+            </div>
+          </div>
+          <div class="skill-group">
+            <div class="skill-cap">Task Pool</div>
+            <div class="skill-item">
+              <span class="bullet"></span>
+              Cloud-Deploy
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Main pane ─── -->
+  <main class="main">
+    <!-- CEO Chat -->
+    <div class="ceo-card">
+      <div class="ceo-head">
+        <div class="ceo-badge">CEO</div>
+        <div class="ceo-title">CEO Agent (Project Orchestrator)</div>
+      </div>
+      <div class="ceo-body">
+        <div class="ceo-bubble">Welcome, CEO. I'm ready to orchestrate your project. What's our main objective for today?</div>
+      </div>
+      <div class="ceo-composer">
+        <input type="text" placeholder="Discuss project roadmap with CEO…" />
+        <span class="ceo-send" title="Send">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 2L11 13"/>
+            <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+          </svg>
+        </span>
+      </div>
+    </div>
+
+    <!-- Active Missions -->
+    <div class="mission-head">
+      <span class="term-glyph">&gt;_</span>
+      <span>Active Missions</span>
+    </div>
+    <div class="mission-grid">
+      <div class="mission-card"><div class="label">Proposed</div></div>
+      <div class="mission-card"><div class="label">Executing</div></div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>
