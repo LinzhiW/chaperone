@@ -4,7 +4,8 @@ import { simpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { GoogleGenerativeAI, Tool } from '@google/generative-ai';
+import { getProvider } from './providers';
+import { ChatSession } from './providers/types';
 import { exec, execFile } from 'child_process';
 import dotenv from 'dotenv';
 import { shouldUseSearchGrounding, generateContentWithGoogleSearch } from './utils/googleSearchGrounding';
@@ -30,7 +31,7 @@ const activeMissions = new Map<string, PendingAction>();
 
 // --- Per-panel sessions (T3) ---
 interface PanelSession {
-  chat: any;           // Gemini ChatSession
+  session: ChatSession;   // provider-agnostic chat session
   workspacePath: string;
 }
 const panelSessions = new Map<string, PanelSession>();
@@ -92,6 +93,13 @@ const writeFile = (filePath: string, content: string, workspacePath: string): st
   } catch (err: any) { return `[ERROR] ${err.message}`; }
 };
 
+// --- Agent tool schemas (provider-agnostic; pipeline owns the tools) ---
+const TOOL_DEFS = [
+  { name: "run_shell", description: "Run shell command", parameters: { type: "OBJECT", properties: { command: { type: "STRING" } }, required: ["command"] } },
+  { name: "read_file", description: "Read file", parameters: { type: "OBJECT", properties: { path: { type: "STRING" } }, required: ["path"] } },
+  { name: "write_file", description: "Write file", parameters: { type: "OBJECT", properties: { path: { type: "STRING" }, content: { type: "STRING" } }, required: ["path", "content"] } },
+];
+
 // --- Endpoints ---
 app.get('/api/status', (req, res) => res.json({ status: 'online' }));
 
@@ -134,7 +142,6 @@ app.get('/api/execute-mission', async (req, res) => {
 
   const sendEvent = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
   const apiKey = getApiKey();
-  const modelId = getModelId();
   if (!apiKey) { sendEvent('log', { log: '> [ERROR] API Key missing.' }); return res.end(); }
 
   // T5: auto git branch checkout
@@ -157,15 +164,6 @@ app.get('/api/execute-mission', async (req, res) => {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const tools: any[] = [{
-      functionDeclarations: [
-        { name: "run_shell", description: "Run shell command", parameters: { type: "OBJECT", properties: { command: { type: "STRING" } }, required: ["command"] } },
-        { name: "read_file", description: "Read file", parameters: { type: "OBJECT", properties: { path: { type: "STRING" } }, required: ["path"] } },
-        { name: "write_file", description: "Write file", parameters: { type: "OBJECT", properties: { path: { type: "STRING" }, content: { type: "STRING" } }, required: ["path", "content"] } }
-      ]
-    }];
-
     // Build system instruction with skill loadout
     const skillNames: string[] = skills ? JSON.parse(skills) : [];
     const loadedSkills = skillNames
@@ -182,39 +180,37 @@ app.get('/api/execute-mission', async (req, res) => {
       '\nUse tools to act. Always state your intent before calling a tool.',
     ].join('\n');
 
-    const model = genAI.getGenerativeModel({ model: modelId, tools, systemInstruction });
-    const chat = model.startChat();
+    // Provider-agnostic chat session (TODO P1). Pipeline owns the loop/HITL/tools.
+    const provider = getProvider();
+    const session = provider.startChat({ system: systemInstruction, tools: TOOL_DEFS });
 
     // Store session so nudge endpoint can continue the conversation later
-    panelSessions.set(taskId, { chat, workspacePath });
+    panelSessions.set(taskId, { session, workspacePath });
     activePanels.add(taskId);
 
     const skillLog = loadedSkills.length > 0
       ? ` · skills: ${skillNames.join(', ')}`
       : '';
-    sendEvent('log', { log: `> [SYSTEM] Agent initialized (${modelId}${skillLog}).` });
+    sendEvent('log', { log: `> [SYSTEM] Agent initialized (${provider.modelLabel}${skillLog}).` });
 
-    let result = await chat.sendMessage('Begin. State your plan first.');
+    let turn = await session.sendMessage('Begin. State your plan first.');
     for (let i = 0; i < 10; i++) {
-      const response = await result.response;
-      const calls = response.functionCalls();
-      if (calls && calls.length > 0) {
-        for (const call of calls) {
+      if (turn.toolCalls.length > 0) {
+        for (const call of turn.toolCalls) {
           sendEvent('require_approval', { tool: call.name, args: call.args });
           const approved = await new Promise<boolean>((resolve) => activeMissions.set(taskId, { resolve, toolCall: call }));
           if (!approved) { sendEvent('log', { log: `> [DENIED] Stopping.` }); activePanels.delete(taskId); return res.end(); }
-          
+
           let output = "";
           if (call.name === "run_shell") output = await runShell((call.args as any).command, workspacePath);
           else if (call.name === "read_file") output = readFile((call.args as any).path, workspacePath);
           else if (call.name === "write_file") output = writeFile((call.args as any).path, (call.args as any).content, workspacePath);
-          
+
           sendEvent('log', { log: `> [OUTPUT] ${output.substring(0, 300)}` });
-          result = await chat.sendMessage([{ functionResponse: { name: call.name, response: { result: output } } }]);
+          turn = await session.sendToolResults([{ name: call.name, result: output }]);
         }
       } else {
-        const text = response.text();
-        if (text) sendEvent('log', { log: `> [FINAL] ${text}` });
+        if (turn.text) sendEvent('log', { log: `> [FINAL] ${turn.text}` });
         break;
       }
     }
@@ -278,12 +274,9 @@ Rules:
       return res.json({ text: groundedResponse.text, groundingSources: groundedResponse.groundingSources });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: systemPrompt });
-    const chat = model.startChat({ history: history || [] });
-    const result = await chat.sendMessage(message);
-    const response = await result.response;
-    res.json({ text: response.text() });
+    const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
+    const turn = await session.sendMessage(message);
+    res.json({ text: turn.text });
   } catch (err: any) { 
     console.error(err);
     res.status(500).json({ error: err.message }); 
@@ -333,20 +326,18 @@ app.post('/api/panel/:panelId/nudge', async (req, res) => {
     return res.json({ text: 'Worker is currently executing — approve or deny the pending action first.' });
   }
 
-  const session = panelSessions.get(panelId);
-  if (!session) return res.status(404).json({ error: 'No session found. Start the worker first.' });
+  const panel = panelSessions.get(panelId);
+  if (!panel) return res.status(404).json({ error: 'No session found. Start the worker first.' });
 
   try {
-    const result = await session.chat.sendMessage(message);
-    const response = await result.response;
-    const calls = response.functionCalls();
-    if (calls && calls.length > 0) {
+    const turn = await panel.session.sendMessage(message);
+    if (turn.toolCalls.length > 0) {
       // Worker wants to take action — surface this but don't auto-execute
       return res.json({
-        text: (response.text() || 'Worker wants to take action.') + '\n> [TOOL REQUEST] Start the worker again to execute.',
+        text: (turn.text || 'Worker wants to take action.') + '\n> [TOOL REQUEST] Start the worker again to execute.',
       });
     }
-    res.json({ text: response.text() });
+    res.json({ text: turn.text });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -475,10 +466,7 @@ If a branch has no diff, include one "note" annotation saying so.`;
   send('log', { log: '[REVIEWER] Analyzing with Gemini…' });
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: getModelId() });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    const text = await getProvider().generateOnce(prompt);
 
     send('log', { log: '[REVIEWER] Analysis complete. Parsing annotations…' });
 
