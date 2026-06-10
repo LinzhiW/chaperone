@@ -1,46 +1,50 @@
 # Session Handoff — read this first in a new window
 
-**Snapshot taken:** 2026-06-09 (after the v2 direction reset + skill-loadout spec)
-**Branch:** `feat/t1-structured-tasks` — M0+M1 code + all v2 planning docs **uncommitted**
+**Snapshot taken:** 2026-06-09 (end of day — P1 backend + accurate build tracker)
+**Branch:** `refactor/model-provider` (P1 committed here; branched off `feat/t1-structured-tasks`)
 
 ---
 
-## TL;DR — what just happened
+## TL;DR — resume here tomorrow
 
-This session was **planning/spec, not code**. We reset the product direction and
-locked the skill system spec. **Read in this order:**
-1. [PRD.md](PRD.md) v2.1 — the spec (provider-agnostic; §4 HITL; §5 architecture;
-   §7.2 + §7.2.2 skill loadouts).
-2. [TODO.md](TODO.md) — phased backlog P0–P6 with branches + dependency graph.
-3. [PROJECT_STATE.md](PROJECT_STATE.md) — current truth + global designed-vs-built gap table.
+**Read first:** [BUILD_TRACKER.md](BUILD_TRACKER.md) — the accurate, code-verified
+status board (视觉 vs 功能 columns). Then [PRD.md](PRD.md) (spec) + [TODO.md](TODO.md).
 
-## The direction (in one breath)
-Provider-agnostic, GUI-first, human-coordinated multi-agent platform. **One pipeline**
-owns agent behavior; vendors are interchangeable **model backends** (Claude is just a
-model — Anthropic Messages API, no Agent SDK). **Checkpoint-gated HITL** (not per-tool).
-**Skill loadouts** (equip agents like a game) are the core differentiator.
+**What landed today:**
+1. **P1 — provider-agnostic backend.** New `server/src/providers/` (`types.ts`
+   `ModelProvider`/`ChatSession`, `gemini.ts` adapter, `index.ts` `getProvider()`
+   factory). `index.ts` rewired so all 4 model calls (`/execute-mission`,
+   `/ceo/chat`, `/nudge`, `/reviewer`) go through the interface — no Gemini-specific
+   code left in `index.ts`. `tsc --noEmit` clean + module loads under ts-node.
+   ⬜ **Still pending: a live end-to-end run with a real `GEMINI_API_KEY`.**
+2. **Accurate BUILD_TRACKER** — re-audited against real code (the old gap table was
+   based on pre-pivot files).
 
-## Locked decisions this session (don't re-litigate)
-- Engine: don't brute-force replace — refactor in place; Gemini code → first adapter.
-- HITL: bounded autonomy + hard stop at task boundary + human-gated merge; per-worker mode.
-- Coordination: fan-out/fan-in (comms) + git (integration) coexist; git load-bearing.
-- Skills (G1–G6 resolved): three-tier authority (human > PM-suggest > system base);
-  base set + ~8–10 custom slots; one neutral `SKILL.md` injected uniformly, **no
-  per-engine translation**; PM suggest→accept·mount; mid-mission edit = gate; show token cost.
+## 🔴 Most important finding (tomorrow's first task)
+**The PM → plan → dispatch chain is visually built but functionally orphaned.**
+`sendPmMessage` (real `/ceo/chat` + TASK_PLAN parse → `pendingAssignments`) is
+**never called**. The PM composer routes into a hardcoded demo (briefing chips →
+fake W1/W2/W3 plan). So `dispatchMission` gets empty `pendingAssignments` →
+**no UI path to create a real mission**, even though worker exec / HITL / reviewer
+are all wired and functional.
 
-## On resume — next actions
-1. **P0**: `git commit` the M0+M1 work + all v2 docs (archive point). ← do this first.
-2. **P1** (foundation, blocks everything): branch `refactor/model-provider` —
-   define `ModelProvider` interface, extract Gemini logic into `GeminiProvider`,
-   behavior-identical. Exit gate: existing Gemini flow works through the interface.
-3. Then parallel branches: P2 Claude adapter · P2.5 checkpoint HITL · P2.6 git policy
-   · P3 engine select · P4 skill loadouts (core differentiator).
-4. UI (P6) waits for backend to settle, then build the unbuilt Skills system (4 screens)
-   + Recruit + PM-clarify.
+**→ Tomorrow, first build task: reconnect this link.** Wire the PM idle composer to
+`sendPmMessage`, render real `pendingAssignments` as the plan (replace the hardcoded
+W1/W2/W3 block), so the app runs end-to-end: brief → plan → dispatch → workers →
+reviewer. Then move to the Skills cluster (库→导入→配装→组套), the core differentiator.
+
+## Branch / git state
+- On `refactor/model-provider`: P1 + tracker + this handoff committed.
+- `feat/t1-structured-tasks` has the M0+M1 + v2-docs archive (commits `4a3f233`, `07fbf34`).
+- **Uncommitted, intentionally local (do NOT commit):** `docs/product-intro.md`,
+  `docs/weekly-report.md`, `docs/weekly/` — content assets for LinkedIn / website log.
 
 ## Environment
-- Frontend `npm run dev` → http://localhost:5173 · Backend → http://localhost:3005
-- `GEMINI_API_KEY` in `.env` required.
+- Backend: `cd server && npm run dev` → http://localhost:3005 (needs `GEMINI_API_KEY` in `.env`)
+- Frontend: `npm run dev` → http://localhost:5173
+- View Skills/etc.: app gates on onboarding (`config.projectPath` in localStorage);
+  `?screen=…` forces onboarding phases for preview.
 
-## One small open decision
-- Which skills are the always-on **system base set**? Curate at build time.
+## Open decisions still parked
+- Which skills = the always-on **system base set** (curate at build time).
+- `/ceo/chat` Google-Search grounding stays Gemini-specific until P3.
