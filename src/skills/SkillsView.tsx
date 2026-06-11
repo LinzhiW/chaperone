@@ -5,7 +5,7 @@
 // gracefully when the backend is offline. Save-gated edits live inside the
 // individual screens (WorkerLoadout), not here.
 
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { Skill, SavedSet, Worker, RolePreset } from '../canopyTypes';
 import { SkillsLibrary } from './SkillsLibrary';
 import { SkillImport } from './SkillImport';

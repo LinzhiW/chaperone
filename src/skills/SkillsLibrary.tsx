@@ -2,7 +2,7 @@
 // Card grid + search + category filter + sort + source badges + saved-sets rail.
 // Source skills are REAL (GET /api/skills). Empty states when nothing exists.
 
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { Skill, SavedSet, Worker } from '../canopyTypes';
 import { LibrarySkillCard, EmptyBlock } from './SkillCard';
 import { colorForSkill } from './api';
