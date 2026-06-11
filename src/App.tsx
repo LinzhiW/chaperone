@@ -1554,12 +1554,13 @@ const App: React.FC = () => {
     if (path !== null) setConfig({ ...config, projectPath: path });
   };
 
-  const sendPmMessage = async () => {
-    if (!pmInput.trim() || isPmThinking) return;
-    const userMsg: Message = { role: 'user', content: pmInput };
+  const sendPmMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? pmInput).trim();
+    if (!text || isPmThinking) return;
+    const userMsg: Message = { role: 'user', content: text };
     setPmMessages(prev => [...prev, userMsg]);
-    const currentInput = pmInput;
     setPmInput('');
+    setPmBriefInput(text);
     setIsPmThinking(true);
     try {
       const apiHistory = pmMessages
@@ -1569,7 +1570,7 @@ const App: React.FC = () => {
       const res = await fetch('http://localhost:3005/api/ceo/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput, history: apiHistory, files: realFiles }),
+        body: JSON.stringify({ message: text, history: apiHistory, files: realFiles }),
       });
       const data = await res.json();
       if (data.text) {
@@ -2320,6 +2321,31 @@ const App: React.FC = () => {
                         </div>
                       );
                     })}
+                    {isPmThinking && (
+                      <div style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>PM is thinking…</div>
+                    )}
+                    {pendingAssignments.length > 0 && (
+                      <div style={{ alignSelf: 'flex-start', width: '100%', maxWidth: 600 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'var(--worker)', textTransform: 'uppercase', marginBottom: 8 }}>Proposed plan · {pendingAssignments.length} assignment{pendingAssignments.length > 1 ? 's' : ''}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                          {pendingAssignments.map(a => (
+                            <div key={a.id} className="box" style={{ padding: '10px 12px', background: 'var(--paper)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', background: 'var(--paper-2)', border: '1px solid var(--rule)', borderRadius: 3, padding: '1px 6px' }}>{a.agentId}</span>
+                                <span className="branch-chip">{a.branchName}</span>
+                              </div>
+                              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>{a.task}</div>
+                              {a.skillLoadout.length > 0 && (
+                                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                  {a.skillLoadout.map(s => <span key={s} style={{ fontSize: 10, background: 'var(--worker-soft)', color: 'var(--worker)', border: '1px solid var(--worker)', borderRadius: 3, padding: '1px 5px' }}>{s}</span>)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={dispatchMission} style={{ fontSize: 13, padding: '8px 18px', background: 'var(--review)', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 700, cursor: 'pointer' }}>▶ Dispatch {pendingAssignments.length} worker{pendingAssignments.length > 1 ? 's' : ''}</button>
+                      </div>
+                    )}
                     <div ref={chatEndRef} />
                   </div>
                 </div>
@@ -2327,17 +2353,17 @@ const App: React.FC = () => {
                   <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div className="composer" style={{ fontSize: 13 }}>
                       <input value={pmInput} onChange={e => setPmInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && pmInput.trim()) { setPmBriefInput(pmInput); setPmInput(''); setPmScreen('briefing'); setBriefingAnswers({ scope: '', who: '', store: '' }); } }}
-                        placeholder={runningMissions.length > 0 ? 'New brief — will queue behind running missions…' : "What's our first mission?"}
+                        onKeyDown={e => { if (e.key === 'Enter' && pmInput.trim() && !isPmThinking) sendPmMessage(); }}
+                        placeholder={isPmThinking ? 'PM is thinking…' : runningMissions.length > 0 ? 'New brief — will queue behind running missions…' : "What's our first mission?"}
                       />
-                      <div className="send" onClick={() => { if (pmInput.trim()) { setPmBriefInput(pmInput); setPmInput(''); setPmScreen('briefing'); setBriefingAnswers({ scope: '', who: '', store: '' }); } }}>↵</div>
+                      <div className="send" onClick={() => { if (pmInput.trim() && !isPmThinking) sendPmMessage(); }}>↵</div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {(runningMissions.length > 0
                         ? ['Scope screens for design', 'Update PRD', 'Summarize dev log', 'Plan a new mission', 'Audit current missions']
                         : ['Plan a feature', 'Plan a refactor', 'Audit the codebase', 'Set up CI']
                       ).map(chip => (
-                        <span key={chip} onClick={() => { setPmBriefInput(chip); setPmScreen('briefing'); setBriefingAnswers({ scope: '', who: '', store: '' }); }}
+                        <span key={chip} onClick={() => { if (!isPmThinking) sendPmMessage(chip); }}
                           style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}
                         >{chip}</span>
                       ))}
