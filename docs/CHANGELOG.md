@@ -1,4 +1,4 @@
-# Change Log - Agent Company
+# Change Log - Canopy
 
 ## [2026-06-09] — v2 direction reset: provider-agnostic + skill-loadout spec
 
@@ -112,7 +112,7 @@
 
 ### Design decisions recorded
 - **Visual theme freeze**: Warm white (`#faf7f0`) designated as future light/bright mode; current dark theme stays for demo. Full light/dark toggle planned after T5 (core flow working end-to-end). Design tokens from `wf-styles.css` saved for that pass.
-- **Reviewed Claude Design bundle** (`Agent Company Wireframes.html`): implementation aligns with DESIGN_LOG sections 1–9. Phase 2 items (PRD.md tab, sticky comment gutter, Reviewer report, Archive → dev log) deferred.
+- **Reviewed Claude Design bundle** (`Canopy Wireframes.html`): implementation aligns with DESIGN_LOG sections 1–9. Phase 2 items (PRD.md tab, sticky comment gutter, Reviewer report, Archive → dev log) deferred.
 - **Negated patterns respected**: no "Talk to PM" in mission view, no auto-dispatch, no QA dept.
 
 ## [2026-04-26] - Phase 3 & 4 Milestone: Tool-Using Agents

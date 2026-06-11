@@ -348,12 +348,12 @@ app.post('/api/init-project', (req, res) => {
   const { projectPath } = req.body;
   if (!projectPath) return res.status(400).json({ error: 'Missing projectPath' });
   try {
-    const acDir = path.join(projectPath, '.agent-company');
+    const acDir = path.join(projectPath, '.canopy');
     fs.mkdirSync(acDir, { recursive: true });
     const starters: Record<string, string> = {
-      'PRD.md': '# Product Requirements Document\n\n_Created by Agent Company. PM will populate this as you brief missions._\n',
-      'SOP.md': '# Standard Operating Procedure\n\n_Created by Agent Company. PM will populate this with team norms._\n',
-      'Dev log.md': '# Development Log\n\n_Created by Agent Company. Reviewer reports will be appended here after each archived mission._\n',
+      'PRD.md': '# Product Requirements Document\n\n_Created by Canopy. PM will populate this as you brief missions._\n',
+      'SOP.md': '# Standard Operating Procedure\n\n_Created by Canopy. PM will populate this with team norms._\n',
+      'Dev log.md': '# Development Log\n\n_Created by Canopy. Reviewer reports will be appended here after each archived mission._\n',
     };
     for (const [name, content] of Object.entries(starters)) {
       const p = path.join(acDir, name);

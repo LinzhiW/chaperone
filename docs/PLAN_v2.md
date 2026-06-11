@@ -6,7 +6,7 @@
 > The wireframe screen list below is still a useful index of the designed UI.
 
 # Design Alignment Plan v2
-**Spec:** Agent Company Wireframes _standalone_5.26.html  
+**Spec:** Canopy Wireframes _standalone_5.26.html  
 **Journey:** docs/USER_JOURNEY.md  
 **Design system:** .design/CLAUDE_CODE_DESIGN_SYSTEM.md (locked)  
 **Rule:** One screen verified in browser → user sign-off → next. No silent batches.

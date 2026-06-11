@@ -4,7 +4,7 @@
 > [PRD.md](PRD.md) v2.1; for status see [PROJECT_STATE.md](PROJECT_STATE.md).**
 > Kept for history only. The "铁律" below still hold and informed the new HITL model.
 
-# Agent Company — Development Plan
+# Canopy — Development Plan
 
 **版本：** v0.1 草稿
 **日期：** 2026-05-18

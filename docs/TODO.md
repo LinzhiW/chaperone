@@ -1,4 +1,4 @@
-# TODO — Agent Company (provider-agnostic refactor)
+# TODO — Canopy (provider-agnostic refactor)
 
 > Created 2026-06-09 alongside PRD v2. Backend-first: get the engine layer right,
 > then align the UI against real functionality. Each assignment = one branch

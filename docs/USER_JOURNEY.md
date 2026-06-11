@@ -1,5 +1,5 @@
-# Agent Company — User Interaction Journey
-**Derived from:** Agent Company Wireframes _standalone_5.26.html  
+# Canopy — User Interaction Journey
+**Derived from:** Canopy Wireframes _standalone_5.26.html  
 **Date:** 2026-05-27
 
 ---

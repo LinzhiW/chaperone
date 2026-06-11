@@ -1,4 +1,4 @@
-# Project State — Agent Company
+# Project State — Canopy
 
 **Last updated:** 2026-06-09
 **Branch:** `feat/t1-structured-tasks` (M0+M1 + all v2 planning docs **uncommitted**)
