@@ -6,6 +6,7 @@ import path from 'path';
 import os from 'os';
 import { getProvider } from './providers';
 import { ChatSession } from './providers/types';
+import * as store from './persistence';
 import { exec, execFile } from 'child_process';
 import dotenv from 'dotenv';
 import { shouldUseSearchGrounding, generateContentWithGoogleSearch } from './utils/googleSearchGrounding';
@@ -104,6 +105,91 @@ const TOOL_DEFS = [
 app.get('/api/status', (req, res) => res.json({ status: 'online' }));
 
 app.get('/api/skills', (req, res) => res.json({ skills: listSkills() }));
+
+// ─── Persistence: Team / Saved Sets / Role Presets ──────────────────────────
+// JSON files under <workspacePath>/.canopy/. Missing file = empty list.
+// See docs/API_CONTRACT.md.
+
+const getWorkspacePath = (req: any): string | undefined =>
+  (req.query.workspacePath as string) || (req.body && req.body.workspacePath);
+
+// Team (recruited workers)
+app.get('/api/team', (req, res) => {
+  const ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  try { res.json({ workers: store.getWorkers(ws) }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/team', (req, res) => {
+  const { workspacePath, worker } = req.body || {};
+  if (!workspacePath || !worker) return res.status(400).json({ error: 'Missing workspacePath or worker' });
+  try { res.json({ worker: store.addWorker(workspacePath, worker) }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/team/:id', (req, res) => {
+  const { workspacePath, patch } = req.body || {};
+  if (!workspacePath || !patch) return res.status(400).json({ error: 'Missing workspacePath or patch' });
+  try {
+    const worker = store.updateWorker(workspacePath, req.params.id, patch);
+    if (!worker) return res.status(404).json({ error: 'Worker not found' });
+    res.json({ worker });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/team/:id', (req, res) => {
+  const ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  try {
+    const ok = store.deleteWorker(ws, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Worker not found' });
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Saved sets (reusable skill combos)
+app.get('/api/saved-sets', (req, res) => {
+  const ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  try { res.json({ sets: store.getSavedSets(ws) }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/saved-sets', (req, res) => {
+  const { workspacePath, set } = req.body || {};
+  if (!workspacePath || !set) return res.status(400).json({ error: 'Missing workspacePath or set' });
+  try { res.json({ set: store.addSavedSet(workspacePath, set) }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/saved-sets/:id', (req, res) => {
+  const { workspacePath, patch } = req.body || {};
+  if (!workspacePath || !patch) return res.status(400).json({ error: 'Missing workspacePath or patch' });
+  try {
+    const set = store.updateSavedSet(workspacePath, req.params.id, patch);
+    if (!set) return res.status(404).json({ error: 'Saved set not found' });
+    res.json({ set });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/saved-sets/:id', (req, res) => {
+  const ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  try {
+    const ok = store.deleteSavedSet(ws, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Saved set not found' });
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// Role presets (seeds the 6 built-ins on first GET)
+app.get('/api/role-presets', (req, res) => {
+  const ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  try { res.json({ presets: store.getRolePresets(ws) }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 app.get('/api/files', (req, res) => {
   const projectPath = req.query.path as string;
@@ -224,7 +310,7 @@ app.get('/api/execute-mission', async (req, res) => {
 });
 
 app.post('/api/ceo/chat', async (req, res) => {
-  const { message, history, files } = req.body;
+  const { message, history, files, clarifyAnswers } = req.body;
   const apiKey = getApiKey();
   const modelId = getModelId();
   if (!apiKey) return res.status(400).json({ error: 'Key missing' });
@@ -232,14 +318,34 @@ app.post('/api/ceo/chat', async (req, res) => {
   try {
     const fileList = files && files.length > 0 ? files.join(', ') : "None";
     const availableSkills = listSkills().map(s => s.name).join(', ') || 'none loaded';
+
+    // When the frontend re-sends clarify answers, fold them into the prompt and
+    // force the PM straight to a plan (no second round of questions).
+    const answersBlock = clarifyAnswers && Object.keys(clarifyAnswers).length > 0
+      ? `\nThe user has answered your clarifying questions:\n${Object.entries(clarifyAnswers)
+          .map(([k, v]) => `- ${k}: ${v}`).join('\n')}\nUse these answers to produce the plan now. Do NOT ask more questions.`
+      : '';
+
     const systemPrompt = `You are the Project Orchestrator (PM) of a multi-agent development platform.
 Context: Workspace files: ${fileList}.
 Available skills (use these exact names in skill_loadout): ${availableSkills}.
 
-When the user describes a goal or feature request, produce a structured task plan.
-Output the plan as a JSON array wrapped in <<<TASK_PLAN>>> markers, then give a brief explanation.
+You respond in ONE of three modes, signalled by a leading control marker on the FIRST line:
 
-Example format:
+1) CLARIFY — when a goal/feature brief is AMBIGUOUS (unclear scope, missing target,
+   multiple reasonable interpretations), ask 1-3 short clarifying questions FIRST.
+   Output a JSON object wrapped in <<<CLARIFY>>> ... <<<END_CLARIFY>>> markers:
+<<<CLARIFY>>>
+[
+  { "key": "scope",  "label": "Scope of the change", "options": ["Whole app", "Single page", "API only"] },
+  { "key": "target", "label": "Which surface",        "options": ["Web", "Mobile", "Both"] }
+]
+<<<END_CLARIFY>>>
+   Each question: a short "key", a human "label", and 2-4 "options" chips.
+   After the markers, write one sentence telling the user you need a bit more info.
+
+2) PLAN — when the brief is CLEAR (or after the user answered your questions),
+   output the task plan as a JSON array wrapped in <<<TASK_PLAN>>> markers:
 <<<TASK_PLAN>>>
 [
   {
@@ -256,30 +362,63 @@ Example format:
   }
 ]
 <<<END_TASK_PLAN>>>
+   Then explain the plan in 2-3 sentences.
+
+3) MESSAGE — for general conversation (not a goal/feature request), just reply
+   normally with no markers.
 
 Rules:
-- Each agent_id must be unique and descriptive (e.g. "frontend-worker", "data-worker")
-- branch_name must follow git convention: feat/<short-slug>
-- skill_loadout lists relevant skills from the workspace skill pool
-- After the markers, explain the plan in 2-3 sentences
-- For general conversation (not a goal/feature request), respond normally without the markers`;
+- Use CLARIFY at most once per brief; if the user already answered, go straight to PLAN.
+- agent_id must be unique and descriptive (e.g. "frontend-worker", "data-worker").
+- branch_name must follow git convention: feat/<short-slug>.
+- skill_loadout lists relevant skills from the workspace skill pool.${answersBlock}`;
 
+    // Build the model turn (grounded path stays text-only).
+    let text: string;
+    let groundingSources: any = undefined;
     if (shouldUseSearchGrounding(message)) {
       const groundedResponse = await generateContentWithGoogleSearch({
         apiKey,
         model: modelId,
-        history: [{ role: 'system', parts: [{ text: systemPrompt }] }, ...history],
+        history: [{ role: 'system', parts: [{ text: systemPrompt }] }, ...(history || [])],
         parts: [{ text: message }]
       });
-      return res.json({ text: groundedResponse.text, groundingSources: groundedResponse.groundingSources });
+      text = groundedResponse.text;
+      groundingSources = groundedResponse.groundingSources;
+    } else {
+      const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
+      const turn = await session.sendMessage(message);
+      text = turn.text;
     }
 
-    const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
-    const turn = await session.sendMessage(message);
-    res.json({ text: turn.text });
-  } catch (err: any) { 
+    // Parse the control markers into the structured { kind, ... } contract while
+    // keeping the legacy `text` (with markers intact) for back-compat.
+    const clarifyMatch = text.match(/<<<CLARIFY>>>([\s\S]*?)<<<END_CLARIFY>>>/);
+    const planMatch = text.match(/<<<TASK_PLAN>>>([\s\S]*?)<<<END_TASK_PLAN>>>/);
+
+    if (clarifyMatch) {
+      let questions: any[] = [];
+      try { questions = JSON.parse(clarifyMatch[1].trim()); } catch { /* malformed */ }
+      return res.json({ kind: 'clarify', text, questions, groundingSources });
+    }
+    if (planMatch) {
+      let plan: any[] = [];
+      try {
+        const raw = JSON.parse(planMatch[1].trim());
+        // Normalize legacy snake_case plan into the Assignment shape used by the UI.
+        plan = raw.map((p: any) => ({
+          agentId: p.agentId || p.agent_id,
+          task: p.task,
+          branchName: p.branchName || p.branch_name || `feat/${p.agentId || p.agent_id}`,
+          skillLoadout: p.skillLoadout || p.skill_loadout || [],
+        }));
+      } catch { /* malformed */ }
+      return res.json({ kind: 'plan', text, plan, groundingSources });
+    }
+    res.json({ kind: 'message', text, groundingSources });
+  } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: err.message });
   }
 });
 

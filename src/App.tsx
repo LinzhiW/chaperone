@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { Worker as TeamWorker } from './canopyTypes';
+import { SkillsView } from './skills';
+import RecruitModal from './recruit/RecruitModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -231,10 +234,12 @@ function MissionRail({ projectName, onProjectClick, onNewProject, onSettings }: 
 function Sidebar({
   workspacePath: _wp, onOpenWorkspace: _ow, realFiles: _rf, onRefreshFiles: _or, isLoadingFiles: _il,
   activeView, onSelectPm, missions, onSelectMission, skills: _sk, onAddSkill, onNewMission,
+  onSelectSkills, onRecruit, team,
 }: {
   workspacePath: string; onOpenWorkspace: () => void; realFiles: string[]; onRefreshFiles: () => void;
   isLoadingFiles: boolean; activeView: string; onSelectPm: () => void; missions: Mission[];
   onSelectMission: (id: string) => void; skills: Skill[]; onAddSkill: () => void; onNewMission: () => void;
+  onSelectSkills: () => void; onRecruit: () => void; team: TeamWorker[];
 }) {
   const isPmActive = activeView === 'pm';
   const activeMissionId = activeView !== 'pm' ? activeView : null;
@@ -248,8 +253,14 @@ function Sidebar({
         <SideNavRow icon={IcoFiles} label="Files" expanded={false} />
 
         {/* Team */}
-        <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded addable addColor="var(--paper)" onAdd={onNewMission} />
+        <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded addable addColor="var(--approve)" onAdd={onRecruit} />
         <SidePmItem active={isPmActive} />
+        {team.map(w => (
+          <div key={w.id} onClick={onSelectSkills} title="open loadout" style={{ padding:'3px 10px 3px 38px',borderRadius:4,display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer',color:'var(--ink-2)' }}>
+            <span style={{ width:6,height:6,borderRadius:99,background:'var(--worker)' }} />
+            <span style={{ flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{w.id} · {w.displayName || w.role}</span>
+          </div>
+        ))}
 
         {/* Missions */}
         <SideNavRow icon={IcoMissions} label="Missions" active={isMissionsActive} expanded={missions.length > 0} addable onAdd={onNewMission} onClick={() => missions.length > 0 ? onSelectMission(missions[0].id) : onNewMission()} />
@@ -285,7 +296,7 @@ function Sidebar({
         )}
 
         {/* Skills */}
-        <SideNavRow icon={IcoSkills} label="Skills" expanded={false} addable onAdd={onAddSkill} />
+        <SideNavRow icon={IcoSkills} label="Skills" active={activeView === 'skills'} expanded={false} addable onAdd={onAddSkill} onClick={onSelectSkills} />
       </div>
 
       <div style={{ flex:1 }} />
@@ -1467,6 +1478,10 @@ const App: React.FC = () => {
   const [addSkillContent, setAddSkillContent] = useState('');
   const [isAddingSkill, setIsAddingSkill] = useState(false);
 
+  // Team (recruited persistent workers) + recruit modal
+  const [team, setTeam] = useState<TeamWorker[]>([]);
+  const [recruitOpen, setRecruitOpen] = useState(false);
+
   // UI
   const [activeView, setActiveView] = useState<'pm' | string>('pm');
   const [activePmTab, setActivePmTab] = useState<'chat' | 'prd' | 'sop' | 'devlog'>('chat');
@@ -1508,6 +1523,15 @@ const App: React.FC = () => {
       })
       .catch(() => {});
   }, [backendStatus]);
+
+  // Load recruited team from backend persistence
+  useEffect(() => {
+    if (backendStatus !== 'online' || !config.projectPath) return;
+    fetch(`http://localhost:3005/api/team?workspacePath=${encodeURIComponent(config.projectPath)}`)
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.workers)) setTeam(d.workers); })
+      .catch(() => {});
+  }, [backendStatus, config.projectPath]);
 
   useEffect(() => {
     if (config.projectPath && backendStatus === 'online') refreshFiles();
@@ -2240,6 +2264,9 @@ const App: React.FC = () => {
         skills={skills}
         onAddSkill={() => setShowAddSkill(true)}
         onNewMission={() => setActiveView('pm')}
+        onSelectSkills={() => setActiveView('skills')}
+        onRecruit={() => setRecruitOpen(true)}
+        team={team}
       />
 
       {/* ── Main area ── */}
@@ -2554,6 +2581,10 @@ const App: React.FC = () => {
           </PMShell>
         )}
 
+        {activeView === 'skills' && (
+          <SkillsView workspacePath={config.projectPath} />
+        )}
+
         {/* ── Mission Dashboard ── */}
         {activeMission && (() => {
           const allBooting = activeMission.assignments.every(a => a.status === 'proposed');
@@ -2707,6 +2738,15 @@ const App: React.FC = () => {
       </div>
 
       {/* Onboarding is handled by the phase-based early-returns above. */}
+
+      {/* ── Recruit Worker Modal ── */}
+      <RecruitModal
+        open={recruitOpen}
+        workspacePath={config.projectPath}
+        existingTeam={team}
+        onClose={() => setRecruitOpen(false)}
+        onHired={(w) => { setTeam(t => [...t, w]); setRecruitOpen(false); }}
+      />
 
       {/* ── Add Skill Modal ── */}
       {showAddSkill && (
