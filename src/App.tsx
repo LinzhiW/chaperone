@@ -1425,6 +1425,74 @@ function PMTab_DevLog({ archivedMissions, selectedIdx, onSelectIdx, editMode, on
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
+// Real PM doc tab — reads the ACTUAL PRD/SOP/Dev-log file from the project
+// (.canopy/, root, or docs/) and renders it; edit saves to .canopy/. No demo data.
+function RealDocTab({ name, workspacePath }: { name: 'PRD' | 'SOP' | 'DevLog'; workspacePath: string }) {
+  const [content, setContent] = useState('');
+  const [foundPath, setFoundPath] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!workspacePath) { setLoading(false); return; }
+    setLoading(true); setEditing(false);
+    fetch(`http://localhost:3005/api/doc?workspacePath=${encodeURIComponent(workspacePath)}&name=${name}`)
+      .then(r => r.json())
+      .then(d => { setContent(d.content || ''); setFoundPath(d.found ? d.path : null); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [name, workspacePath]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await fetch('http://localhost:3005/api/doc', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspacePath, name, content: draft }) });
+      const d = await r.json();
+      if (d.ok) { setContent(draft); setFoundPath(d.path); setEditing(false); }
+    } finally { setSaving(false); }
+  };
+
+  const label = name === 'DevLog' ? 'Dev log.md' : `${name}.md`;
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--paper-2)' }}>
+      <div style={{ padding: '10px 18px', borderBottom: '1.5px solid var(--rule)', background: 'var(--paper)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{label}</span>
+        <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
+          {loading ? 'loading…' : foundPath ? `· reading ${foundPath}` : '· not found in this project'}
+        </span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {!editing ? (
+            <button onClick={() => { setDraft(content); setEditing(true); }} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 4, border: '1.5px solid var(--rule)', background: 'var(--paper)', cursor: 'pointer' }}>✎ Edit</button>
+          ) : (
+            <>
+              <button onClick={() => setEditing(false)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 4, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={save} disabled={saving} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 4, border: '1.5px solid var(--approve)', background: 'var(--approve)', color: 'var(--paper)', fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : '✓ Save to .canopy/'}</button>
+            </>
+          )}
+        </span>
+      </div>
+      <div className="wf-scroll" style={{ flex: 1, overflow: 'auto', padding: 18 }}>
+        {loading ? (
+          <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Loading…</div>
+        ) : editing ? (
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} spellCheck={false}
+            style={{ width: '100%', minHeight: '60vh', fontFamily: 'var(--mono)', fontSize: 12.5, lineHeight: 1.6, padding: 12, border: '1.5px solid var(--rule)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', resize: 'vertical', boxSizing: 'border-box' }} />
+        ) : content ? (
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'var(--mono)', fontSize: 12.5, lineHeight: 1.65, color: 'var(--ink-2)', margin: 0, maxWidth: 820 }}>{content}</pre>
+        ) : (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 6 }}>No {label} in this project yet</div>
+            <div style={{ fontSize: 12, marginBottom: 14 }}>Looked in <code style={{ fontFamily: 'var(--mono)' }}>.canopy/</code>, the project root, and <code style={{ fontFamily: 'var(--mono)' }}>docs/</code>.</div>
+            <button onClick={() => { setDraft(''); setEditing(true); }} style={{ fontSize: 12, padding: '7px 14px', borderRadius: 4, border: '1.5px solid var(--approve)', background: 'var(--approve)', color: 'var(--paper)', fontWeight: 700, cursor: 'pointer' }}>＋ Create {label}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const App: React.FC = () => {
   // Persisted
   const [config, setConfig] = useLocalStorage('ac_config', {
@@ -2146,9 +2214,9 @@ const App: React.FC = () => {
               hideDocs={!docsReady}
               devLogNew={devLogNew}
             >
-              {activePmTab === 'prd' && <PMTab_PRD edits={prdPendingEdits} onApprove={sec => setPrdPendingEdits(prev => prev.map(e => e.section === sec ? {...e, status: 'approved' as const} : e))} onReject={sec => setPrdPendingEdits(prev => prev.map(e => e.section === sec ? {...e, status: 'rejected' as const} : e))} onApproveAll={() => setPrdPendingEdits(prev => prev.map(e => ({...e, status: 'approved' as const})))} onRejectAll={() => setPrdPendingEdits(prev => prev.map(e => ({...e, status: 'rejected' as const})))} activeSection={activePrdSection} onSectionChange={setActivePrdSection} />}
-              {activePmTab === 'sop' && <PMTab_SOP activeSection={activeSopSection} onSectionChange={setActiveSopSection} />}
-              {activePmTab === 'devlog' && <PMTab_DevLog archivedMissions={missions.filter(m => m.status === 'done')} selectedIdx={selectedLogEntryIdx} onSelectIdx={setSelectedLogEntryIdx} editMode={devLogEditMode} onToggleEdit={() => setDevLogEditMode(v => !v)} />}
+              {activePmTab === 'prd' && <RealDocTab name="PRD" workspacePath={config.projectPath} />}
+              {activePmTab === 'sop' && <RealDocTab name="SOP" workspacePath={config.projectPath} />}
+              {activePmTab === 'devlog' && <RealDocTab name="DevLog" workspacePath={config.projectPath} />}
               {activePmTab === 'chat' && <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px 14px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {docsReady ? (
@@ -2552,32 +2620,9 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {activePmTab === 'prd' && (
-              <PMTab_PRD
-                edits={prdPendingEdits}
-                onApprove={sec => setPrdPendingEdits(prev => prev.map(e => e.section === sec ? { ...e, status: 'approved' as const } : e))}
-                onReject={sec => setPrdPendingEdits(prev => prev.map(e => e.section === sec ? { ...e, status: 'rejected' as const } : e))}
-                onApproveAll={() => setPrdPendingEdits(prev => prev.map(e => ({ ...e, status: 'approved' as const })))}
-                onRejectAll={() => setPrdPendingEdits(prev => prev.map(e => ({ ...e, status: 'rejected' as const })))}
-                activeSection={activePrdSection}
-                onSectionChange={setActivePrdSection}
-              />
-            )}
-            {activePmTab === 'sop' && (
-              <PMTab_SOP
-                activeSection={activeSopSection}
-                onSectionChange={setActiveSopSection}
-              />
-            )}
-            {activePmTab === 'devlog' && (
-              <PMTab_DevLog
-                archivedMissions={missions.filter(m => m.status === 'done')}
-                selectedIdx={selectedLogEntryIdx}
-                onSelectIdx={setSelectedLogEntryIdx}
-                editMode={devLogEditMode}
-                onToggleEdit={() => setDevLogEditMode(v => !v)}
-              />
-            )}
+            {activePmTab === 'prd' && <RealDocTab name="PRD" workspacePath={config.projectPath} />}
+            {activePmTab === 'sop' && <RealDocTab name="SOP" workspacePath={config.projectPath} />}
+            {activePmTab === 'devlog' && <RealDocTab name="DevLog" workspacePath={config.projectPath} />}
           </PMShell>
         )}
 

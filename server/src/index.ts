@@ -623,4 +623,38 @@ If a branch has no diff, include one "note" annotation saying so.`;
   res.end();
 });
 
+// --- Project docs (PRD / SOP / Dev log) — read REAL files from the project ---
+const DOC_CANDIDATES: Record<string, string[]> = {
+  PRD:    ['.canopy/PRD.md', 'PRD.md', 'docs/PRD.md', 'prd.md'],
+  SOP:    ['.canopy/SOP.md', 'SOP.md', 'docs/SOP.md'],
+  DevLog: ['.canopy/Dev log.md', 'Dev log.md', 'docs/Dev log.md', 'CHANGELOG.md', 'docs/CHANGELOG.md'],
+};
+const canonicalDoc = (name: string) => name === 'DevLog' ? 'Dev log.md' : `${name}.md`;
+
+app.get('/api/doc', (req, res) => {
+  const { workspacePath, name } = req.query as any;
+  if (!workspacePath || !DOC_CANDIDATES[name]) return res.status(400).json({ error: 'Missing workspacePath or bad name' });
+  for (const rel of DOC_CANDIDATES[name]) {
+    const p = path.join(workspacePath, rel);
+    if (fs.existsSync(p)) {
+      try { return res.json({ found: true, path: rel, content: fs.readFileSync(p, 'utf-8') }); } catch {}
+    }
+  }
+  res.json({ found: false, path: `.canopy/${canonicalDoc(name)}`, content: '' });
+});
+
+app.put('/api/doc', (req, res) => {
+  const { workspacePath, name, content } = req.body;
+  if (!workspacePath || !DOC_CANDIDATES[name]) return res.status(400).json({ error: 'Missing workspacePath or bad name' });
+  try {
+    const dir = path.join(workspacePath, '.canopy');
+    fs.mkdirSync(dir, { recursive: true });
+    const rel = `.canopy/${canonicalDoc(name)}`;
+    fs.writeFileSync(path.join(workspacePath, rel), content ?? '');
+    res.json({ ok: true, path: rel });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(port, () => console.log(`Backend at ${port}`));
