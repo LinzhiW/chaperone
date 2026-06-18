@@ -1690,6 +1690,22 @@ const App: React.FC = () => {
     } finally { setIsPmThinking(false); }
   };
 
+  const reviewProject = async () => {
+    if (isPmThinking) return;
+    setPmMessages(prev => [...prev, { role: 'user', content: 'Go over my project and tell me what it is.' }]);
+    setIsPmThinking(true);
+    try {
+      const res = await fetch('http://localhost:3005/api/project-review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath }),
+      });
+      const data = await res.json();
+      setPmMessages(prev => [...prev, { role: 'model', content: data.summary || (data.error ? `[ERROR] ${data.error}` : '[No response]') }]);
+    } catch {
+      setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
+    } finally { setIsPmThinking(false); }
+  };
+
   const dispatchMission = () => {
     if (pendingAssignments.length === 0) return;
     const now = new Date();
@@ -2386,11 +2402,26 @@ const App: React.FC = () => {
                     {pmMessages.length === 1 && (
                       <div style={{ alignSelf: 'flex-start', maxWidth: '82%' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
-                        <div className="box" style={{ background: 'var(--paper)', padding: '10px 14px', borderRadius: 8, fontSize: 14, lineHeight: 1.6, maxWidth: 580 }}>
-                          {runningMissions.length > 0
-                            ? <>Welcome back. <strong>{runningMissions.length} mission{runningMissions.length > 1 ? 's' : ''}</strong> running. New briefs queue behind {runningMissions.length > 1 ? 'them' : 'it'}.</>
-                            : "Starting fresh. Tell me what to build, fix, or refactor and I'll draft a plan."}
+                        <div className="box" style={{ background: 'var(--paper)', padding: '12px 16px', borderRadius: 8, fontSize: 14, lineHeight: 1.6, maxWidth: 580 }}>
+                          {runningMissions.length > 0 ? (
+                            <>Welcome back. <strong>{runningMissions.length} mission{runningMissions.length > 1 ? 's' : ''}</strong> running. New briefs queue behind {runningMissions.length > 1 ? 'them' : 'it'}.</>
+                          ) : (
+                            <>
+                              <div style={{ marginBottom: 8 }}>Hi — I'm your <strong>PM</strong>. I plan the work, split it into workers (each on its own git branch), and <strong>never run anything without your OK</strong>. I coordinate; I don't write code myself.</div>
+                              <div>Want me to get up to speed on this project first, or jump straight to a goal?</div>
+                            </>
+                          )}
                         </div>
+                        {runningMissions.length === 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, maxWidth: 580 }}>
+                            <button onClick={() => { if (!isPmThinking) reviewProject(); }} style={{ textAlign: 'left', fontSize: 13, padding: '10px 12px', borderRadius: 6, background: 'var(--pm-soft)', color: 'var(--pm)', border: '1.5px solid var(--pm)', fontWeight: 600, cursor: 'pointer' }}>🔍 Go over my project — read the docs &amp; tell me what it is</button>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {['Plan a feature', 'Plan a refactor', 'Audit the codebase', 'Set up CI'].map(chip => (
+                                <button key={chip} onClick={() => { if (!isPmThinking) sendPmMessage(chip); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>{chip}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* Additional PM messages (e.g. post-archive notification) */}
@@ -2453,16 +2484,7 @@ const App: React.FC = () => {
                       />
                       <div className="send" onClick={() => { if (pmInput.trim() && !isPmThinking) sendPmMessage(); }}>↵</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {(runningMissions.length > 0
-                        ? ['Scope screens for design', 'Update PRD', 'Summarize dev log', 'Plan a new mission', 'Audit current missions']
-                        : ['Plan a feature', 'Plan a refactor', 'Audit the codebase', 'Set up CI']
-                      ).map(chip => (
-                        <span key={chip} onClick={() => { if (!isPmThinking) sendPmMessage(chip); }}
-                          style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}
-                        >{chip}</span>
-                      ))}
-                    </div>
+                    {/* quick presets moved into the conversation (PM opening) */}
                   </div>
                 </div>
               </div>

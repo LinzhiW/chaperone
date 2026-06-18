@@ -657,4 +657,45 @@ app.put('/api/doc', (req, res) => {
   }
 });
 
+// --- Project review — PM actually READS key files and summarizes (no guessing) ---
+app.post('/api/project-review', async (req, res) => {
+  let { workspacePath } = req.body;
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+  try {
+    const readMaybe = (rels: string[], max = 4000) => {
+      for (const rel of rels) {
+        const p = path.join(workspacePath, rel);
+        try { if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8').slice(0, max); } catch {}
+      }
+      return '';
+    };
+    const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
+    const pkg = readMaybe(['package.json'], 1500);
+    let topLevel: string[] = [];
+    try { topLevel = fs.readdirSync(workspacePath).filter(f => !['node_modules', '.git', 'dist', '.next', '.canopy'].includes(f)); } catch {}
+    let docs: string[] = [];
+    try { const d = path.join(workspacePath, 'docs'); if (fs.existsSync(d)) docs = fs.readdirSync(d).slice(0, 30); } catch {}
+    const prompt = `You are the PM. The user just pointed you at this project and asked you to get up to speed. Using ONLY the real files below, tell them in 3–5 sentences, plain and specific: what this project actually IS (its purpose/product), the tech stack, and the current state. Do NOT invent features or tech — if something isn't evident from these files, say so.
+
+=== Top-level entries ===
+${topLevel.join(', ') || '(none)'}
+
+=== README ===
+${readme || '(no README found)'}
+
+=== package.json ===
+${pkg || '(no package.json found)'}
+
+=== docs/ files ===
+${docs.join(', ') || '(no docs/ folder)'}`;
+    const summary = await getProvider().generateOnce(prompt);
+    res.json({ summary });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(port, () => console.log(`Backend at ${port}`));
