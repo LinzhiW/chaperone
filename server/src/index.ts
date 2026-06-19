@@ -310,7 +310,7 @@ app.get('/api/execute-mission', async (req, res) => {
 });
 
 app.post('/api/ceo/chat', async (req, res) => {
-  const { message, history, files, clarifyAnswers } = req.body;
+  const { message, history, files, clarifyAnswers, workspacePath } = req.body;
   const apiKey = getApiKey();
   const modelId = getModelId();
   if (!apiKey) return res.status(400).json({ error: 'Key missing' });
@@ -318,6 +318,22 @@ app.post('/api/ceo/chat', async (req, res) => {
   try {
     const fileList = files && files.length > 0 ? files.join(', ') : "None";
     const availableSkills = listSkills().map(s => s.name).join(', ') || 'none loaded';
+
+    // Ground the PM in the REAL project: read README + package.json so it knows the
+    // actual product and name — not just folder names. (Same files the review reads.)
+    let projectContext = '';
+    if (workspacePath) {
+      let ws = workspacePath; if (ws.startsWith('~')) ws = path.join(os.homedir(), ws.slice(1));
+      const readMaybe = (rels: string[], max = 3000) => {
+        for (const rel of rels) { const p = path.join(ws, rel); try { if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8').slice(0, max); } catch {} }
+        return '';
+      };
+      const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
+      const pkg = readMaybe(['package.json'], 1200);
+      if (readme || pkg) {
+        projectContext = `\n\nYou are working on THIS specific project — ground every answer in its real files below, refer to it by its real name, and never describe it generically:\n=== README ===\n${readme || '(none)'}\n=== package.json ===\n${pkg || '(none)'}`;
+      }
+    }
 
     // When the frontend re-sends clarify answers, fold them into the prompt and
     // force the PM straight to a plan (no second round of questions).
@@ -328,7 +344,7 @@ app.post('/api/ceo/chat', async (req, res) => {
 
     const systemPrompt = `You are the Project Orchestrator (PM) of a multi-agent development platform.
 Context: Workspace files: ${fileList}.
-Available skills (use these exact names in skill_loadout): ${availableSkills}.
+Available skills (use these exact names in skill_loadout): ${availableSkills}.${projectContext}
 
 You respond in ONE of three modes, signalled by a leading control marker on the FIRST line:
 

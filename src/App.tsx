@@ -232,7 +232,7 @@ function MissionRail({ projectName, onProjectClick, onNewProject, onSettings }: 
 /* Sidebar — Workspace / Team (PM + Depts) / Missions / Skills.
    Active item = inverted dark pill. Green-outlined ＋ buttons.                 */
 function Sidebar({
-  workspacePath: _wp, onOpenWorkspace: _ow, realFiles: _rf, onRefreshFiles: _or, isLoadingFiles: _il,
+  workspacePath, onOpenWorkspace, realFiles, onRefreshFiles, isLoadingFiles,
   activeView, onSelectPm, missions, onSelectMission, skills: _sk, onAddSkill, onNewMission,
   onSelectSkills, onRecruit, team,
 }: {
@@ -245,12 +245,40 @@ function Sidebar({
   const activeMissionId = activeView !== 'pm' ? activeView : null;
   const isTeamActive = isPmActive;
   const isMissionsActive = !!activeMissionId;
+  const [filesOpen, setFilesOpen] = useState(true);
 
   return (
     <div className="wf-side">
       <div style={{ display:'flex',flexDirection:'column',gap:2 }}>
         {/* Files */}
-        <SideNavRow icon={IcoFiles} label="Files" expanded={false} />
+        <SideNavRow icon={IcoFiles} label="Files" expanded={false} onClick={() => setFilesOpen(o => !o)} />
+        {filesOpen && (
+          <div style={{ paddingLeft: 38, paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 1, marginBottom: 4 }}>
+            {workspacePath ? (<>
+              <div style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--mono)', padding: '2px 0 4px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workspacePath}>{workspacePath.split(/[\\/]/).filter(Boolean).pop() || workspacePath}</span>
+                <span onClick={onRefreshFiles} title="refresh" style={{ cursor: 'pointer' }}>⟳</span>
+              </div>
+              {isLoadingFiles ? (
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic' }}>loading…</div>
+              ) : realFiles.length === 0 ? (
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic' }}>no files — path may be wrong</div>
+              ) : (
+                realFiles.map(f => {
+                  const isDir = !f.includes('.');
+                  return (
+                    <div key={f} style={{ fontSize: 11.5, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 5, padding: '1px 0' }}>
+                      <span style={{ fontSize: 10, opacity: 0.75 }}>{isDir ? '📁' : '📄'}</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+                    </div>
+                  );
+                })
+              )}
+            </>) : (
+              <div onClick={onOpenWorkspace} style={{ fontSize: 11, color: 'var(--pm)', cursor: 'pointer' }}>＋ open a folder</div>
+            )}
+          </div>
+        )}
 
         {/* Team */}
         <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded addable addColor="var(--approve)" onAdd={onRecruit} />
@@ -1662,7 +1690,7 @@ const App: React.FC = () => {
       const res = await fetch('http://localhost:3005/api/ceo/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: apiHistory, files: realFiles }),
+        body: JSON.stringify({ message: text, history: apiHistory, files: realFiles, workspacePath: config.projectPath }),
       });
       const data = await res.json();
       if (data.text) {
@@ -2331,7 +2359,15 @@ const App: React.FC = () => {
       <MissionRail
         projectName={config.projectPath ? (config.projectPath.split(/[\\/]/).pop() || 'Canopy') : 'Canopy'}
         onProjectClick={() => setActiveView('pm')}
-        onNewProject={() => alert('Multi-project support coming soon. For now, one project per workspace.')}
+        onNewProject={() => {
+          const p = window.prompt('Open a different project folder (full path):', config.projectPath);
+          if (p && p.trim()) {
+            setConfig({ ...config, projectPath: p.trim() });
+            fetch('http://localhost:3005/api/init-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: p.trim() }) }).catch(() => {});
+            setPmMessages([{ role: 'model', content: "Welcome. I'm your PM — I plan, never execute. Want me to go over this project, or jump to a goal?" }]);
+            setActiveView('pm'); setActivePmTab('chat'); setPmScreen('idle');
+          }
+        }}
         onSettings={() => setShowSettings(true)}
       />
 
