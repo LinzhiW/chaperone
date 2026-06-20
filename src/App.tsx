@@ -1530,7 +1530,7 @@ const App: React.FC = () => {
   const [missions, setMissions] = useLocalStorage<Mission[]>('ac_missions', []);
 
   // Session state
-  const [pmMessages, setPmMessages] = useState<Message[]>([{
+  const [pmMessages, setPmMessages] = useLocalStorage<Message[]>('ac_pm_messages', [{
     role: 'model',
     content: "Welcome. I'm your Project Orchestrator — I plan, never execute.\n\nDescribe what you want to build and I'll draft a mission plan for your team.",
   }]);
