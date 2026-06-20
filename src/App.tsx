@@ -1453,6 +1453,22 @@ function PMTab_DevLog({ archivedMissions, selectedIdx, onSelectIdx, editMode, on
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
+// Lightweight markdown render for PM messages: line breaks, bullets, headings, bold.
+function renderRich(text: string): React.ReactNode {
+  const inline = (s: string) => s.split('**').map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p);
+  return (text || '').split('\n').map((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed === '') return <div key={i} style={{ height: 6 }} />;
+    if (/^[*\-•]\s+/.test(trimmed)) {
+      return <div key={i} style={{ display: 'flex', gap: 8, paddingLeft: 2, margin: '2px 0' }}><span style={{ color: 'var(--ink-3)' }}>•</span><span style={{ flex: 1 }}>{inline(trimmed.replace(/^[*\-•]\s+/, ''))}</span></div>;
+    }
+    if (/^#{1,4}\s+/.test(trimmed)) {
+      return <div key={i} style={{ fontWeight: 700, margin: '6px 0 2px' }}>{inline(trimmed.replace(/^#{1,4}\s+/, ''))}</div>;
+    }
+    return <div key={i} style={{ margin: '2px 0' }}>{inline(line)}</div>;
+  });
+}
+
 // Real PM doc tab — reads the ACTUAL PRD/SOP/Dev-log file from the project
 // (.canopy/, root, or docs/) and renders it; edit saves to .canopy/. No demo data.
 function RealDocTab({ name, workspacePath }: { name: 'PRD' | 'SOP' | 'DevLog'; workspacePath: string }) {
@@ -2470,7 +2486,7 @@ const App: React.FC = () => {
                           {!isModel && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 4 }}>You</div>}
                           <div className="box" style={{ background: isModel ? 'var(--paper)' : 'var(--paper-2)', padding: '10px 14px', maxWidth: 580, borderColor: isModel ? 'var(--pm)' : 'var(--rule)' }}>
                             <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-                              {msg.content.split('**').map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
+                              {renderRich(msg.content)}
                             </div>
                             {isArchiveMsg && (
                               <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>

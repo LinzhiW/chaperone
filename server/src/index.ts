@@ -342,7 +342,13 @@ app.post('/api/ceo/chat', async (req, res) => {
           .map(([k, v]) => `- ${k}: ${v}`).join('\n')}\nUse these answers to produce the plan now. Do NOT ask more questions.`
       : '';
 
-    const systemPrompt = `You are the Project Orchestrator (PM) of a multi-agent development platform.
+    // If the user isn't writing in English (CJK detected), force the reply language.
+    const nonEnglish = /[一-鿿぀-ヿ가-힯]/.test(message || '');
+    const langDirective = nonEnglish
+      ? `\n\n>>> LANGUAGE: Reply ENTIRELY in the user's own language (the language of their latest message), never English.`
+      : '';
+
+    const systemPrompt = `${nonEnglish ? 'TOP PRIORITY: The user is writing in a non-English language (e.g. Chinese). You MUST write your entire reply in that same language — never English. This overrides any tendency to answer in English.\n\n' : ''}You are the Project Orchestrator (PM) of a multi-agent development platform.
 Context: Workspace files: ${fileList}.
 Available skills (use these exact names in skill_loadout): ${availableSkills}.${projectContext}
 
@@ -384,28 +390,18 @@ You respond in ONE of three modes, signalled by a leading control marker on the 
    normally with no markers.
 
 Rules:
+- ALWAYS reply in the SAME language the user writes in (e.g. Chinese in -> Chinese out). This applies to all prose, clarifying-question labels/options, and plan explanations.
 - Use CLARIFY at most once per brief; if the user already answered, go straight to PLAN.
 - agent_id must be unique and descriptive (e.g. "frontend-worker", "data-worker").
 - branch_name must follow git convention: feat/<short-slug>.
-- skill_loadout lists relevant skills from the workspace skill pool.${answersBlock}`;
+- skill_loadout lists relevant skills from the workspace skill pool.${answersBlock}${langDirective}`;
 
-    // Build the model turn (grounded path stays text-only).
-    let text: string;
-    let groundingSources: any = undefined;
-    if (shouldUseSearchGrounding(message)) {
-      const groundedResponse = await generateContentWithGoogleSearch({
-        apiKey,
-        model: modelId,
-        history: [{ role: 'system', parts: [{ text: systemPrompt }] }, ...(history || [])],
-        parts: [{ text: message }]
-      });
-      text = groundedResponse.text;
-      groundingSources = groundedResponse.groundingSources;
-    } else {
-      const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
-      const turn = await session.sendMessage(message);
-      text = turn.text;
-    }
+    // Always route through the provider. (The old grounded-search path passed an
+    // unsupported role:'system' to Gemini, which errored on some messages.)
+    const groundingSources: any = undefined;
+    const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
+    const turn = await session.sendMessage(message);
+    const text = turn.text;
 
     // Parse the control markers into the structured { kind, ... } contract while
     // keeping the legacy `text` (with markers intact) for back-compat.
