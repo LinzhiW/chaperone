@@ -1710,7 +1710,11 @@ const App: React.FC = () => {
       });
       const data = await res.json();
       if (data.text) {
-        setPmMessages(prev => [...prev, { role: 'model', content: data.text, groundingSources: data.groundingSources }]);
+        const cleanText = (data.text || '')
+          .replace(/<<<CLARIFY>>>[\s\S]*?<<<END_CLARIFY>>>/g, '')
+          .replace(/<<<TASK_PLAN>>>[\s\S]*?<<<END_TASK_PLAN>>>/g, '')
+          .trim();
+        setPmMessages(prev => [...prev, { role: 'model', content: cleanText || data.text, groundingSources: data.groundingSources }]);
         const planMatch = data.text.match(/<<<TASK_PLAN>>>([\s\S]*?)<<<END_TASK_PLAN>>>/);
         if (planMatch) {
           try {
