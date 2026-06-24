@@ -181,3 +181,83 @@ export function getRolePresets(workspacePath: string): RolePreset[] {
   }
   return readJson<RolePreset[]>(workspacePath, PRESETS_FILE, SEED_PRESETS);
 }
+
+// --- PM Parallelization Plan (pm-plan.json) ---
+// S1 of the PM-model slice: the PM reads the real project and produces a plan
+// (golden path, foundation files, gear, read-only audit allocation). Persisted so
+// it survives reload — see docs/ACCEPTANCE.md.
+const PM_PLAN_FILE = 'pm-plan.json';
+
+export interface PmPlanRecord {
+  goal: string;
+  createdAt: string;
+  model?: string;
+  plan: unknown; // structured plan object (see /api/pm/plan)
+}
+
+export function getPmPlan(workspacePath: string): PmPlanRecord | null {
+  return readJson<PmPlanRecord | null>(workspacePath, PM_PLAN_FILE, null);
+}
+
+export function savePmPlan(workspacePath: string, record: PmPlanRecord): PmPlanRecord {
+  writeJson(workspacePath, PM_PLAN_FILE, record);
+  return record;
+}
+
+// --- Progress Map (progress.json) ---
+// Structured source of truth for the global Progress board (D2). The PM writes this
+// on every state change; the board only renders it. PROGRESS.md stays the human
+// narrative/log. Internal status uses the 7-state lifecycle (PM_OPERATING_MODEL §2);
+// the UI folds them into 5 CEO-facing labels.
+const PROGRESS_FILE = 'progress.json';
+
+export type SliceStatus =
+  | 'pending' | 'in_progress' | 'ai_verified'
+  | 'awaiting_human_acceptance' | 'accepted' | 'blocked' | 'regressed';
+
+export interface ProgressSubtask { id: string; name: string; status: SliceStatus; }
+export interface ProgressSlice {
+  id: string; name: string;
+  kind: 'golden' | 'support';
+  status: SliceStatus;
+  subtasks?: ProgressSubtask[];
+}
+export interface ProgressDoc {
+  mvpGoal: string;
+  gear: 'L1' | 'L2' | 'L3';
+  volatility: 'High' | 'Medium' | 'Low';
+  slices: ProgressSlice[];
+  updatedAt: string;
+}
+
+// Seed reflects the real current state of Canopy's own MVP (dogfooding).
+const SEED_PROGRESS: ProgressDoc = {
+  mvpGoal: 'CEO briefs a goal → PM plans → Workers build on branches → CEO reviews & merges',
+  gear: 'L1',
+  volatility: 'High',
+  slices: [
+    { id: 'S1',   name: 'PM produces a real plan',            kind: 'golden', status: 'accepted', subtasks: [] },
+    { id: 'S1.5', name: 'PM actions agentic + presets',       kind: 'golden', status: 'accepted', subtasks: [] },
+    { id: 'S2',   name: 'PM dispatches read-only L1 audits',  kind: 'golden', status: 'pending',  subtasks: [] },
+    { id: 'S3',   name: 'Worker edits a real file on a branch', kind: 'golden', status: 'pending', subtasks: [] },
+    { id: 'S4',   name: 'Checkpoint + Reviewer + merge',      kind: 'golden', status: 'pending',  subtasks: [] },
+  ],
+  updatedAt: new Date().toISOString(),
+};
+
+/** On first GET, seed from the current MVP slices. PM updates it thereafter. */
+export function getProgress(workspacePath: string): ProgressDoc {
+  const p = filePath(workspacePath, PROGRESS_FILE);
+  if (!fs.existsSync(p)) {
+    writeJson(workspacePath, PROGRESS_FILE, SEED_PROGRESS);
+    return SEED_PROGRESS;
+  }
+  return readJson<ProgressDoc>(workspacePath, PROGRESS_FILE, SEED_PROGRESS);
+}
+
+export function saveProgress(workspacePath: string, doc: Partial<ProgressDoc>): ProgressDoc {
+  const current = getProgress(workspacePath);
+  const next = { ...current, ...doc, updatedAt: new Date().toISOString() };
+  writeJson(workspacePath, PROGRESS_FILE, next);
+  return next;
+}

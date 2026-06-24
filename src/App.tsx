@@ -1537,6 +1537,253 @@ function RealDocTab({ name, workspacePath }: { name: 'PRD' | 'SOP' | 'DevLog'; w
   );
 }
 
+// ── PM Parallelization Plan panel (S1 of the PM-model slice) ────────────────
+// CEO types a goal → PM reads the REAL project → returns a structured plan
+// (golden path, foundation files, gear, read-only audit allocation). Persisted via
+// /api/pm/plan so it survives reload. See docs/PM_OPERATING_MODEL.md + ACCEPTANCE.md.
+function PmPlanPanel({ workspacePath }: { workspacePath: string }) {
+  const [goal, setGoal] = useState('');
+  const [record, setRecord] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!workspacePath) return;
+    fetch(`http://localhost:3005/api/pm/plan?workspacePath=${encodeURIComponent(workspacePath)}`)
+      .then(r => r.json())
+      .then(d => { if (d && d.plan) { setRecord(d); setGoal(d.goal || ''); } })
+      .catch(() => {});
+  }, [workspacePath]);
+
+  const generate = async () => {
+    if (!goal.trim() || loading) return;
+    setLoading(true); setError(null);
+    try {
+      const r = await fetch('http://localhost:3005/api/pm/plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath, goal: goal.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok) setError(d.error || 'Plan failed'); else setRecord(d);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const plan = record?.plan;
+  const gearColor = (g: string) => g === 'L1' ? 'var(--approve)' : g === 'L2' ? 'var(--pm)' : 'var(--review)';
+  const volColor = (v: string) => v === 'Low' ? 'var(--approve)' : v === 'Medium' ? 'var(--pm)' : '#c0392b';
+  const Badge = ({ text, color }: { text: string; color: string }) => (
+    <span style={{ fontSize: 11, fontWeight: 700, color, border: `1.5px solid ${color}`, borderRadius: 4, padding: '2px 8px' }}>{text}</span>
+  );
+
+  return (
+    <div className="box" style={{ padding: '14px 16px', background: 'var(--paper)', borderColor: 'var(--pm)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span className="pm-tag">PM</span>
+        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--pm)' }}>📋 Parallelization Plan</span>
+        {record?.model && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>{record.model}</span>}
+      </div>
+
+      <div className="composer" style={{ padding: '10px 12px', fontSize: 13 }}>
+        <input
+          placeholder='Give the PM a goal — e.g. "add a project switcher"…'
+          value={goal}
+          onChange={e => setGoal(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') generate(); }}
+        />
+        <span className="send" onClick={generate}>{loading ? '…' : '↵'}</span>
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic', marginTop: 10 }}>PM is reading the real project and planning…</div>}
+      {error && <div style={{ fontSize: 12, color: '#c0392b', marginTop: 10 }}>⚠ {error}</div>}
+
+      {plan && !loading && (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14, fontSize: 13, lineHeight: 1.55 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{plan.projectName || 'Project'}</div>
+            {plan.summary && <div style={{ color: 'var(--ink-2)', marginTop: 2 }}>{plan.summary}</div>}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {plan.recommendedGear && <Badge text={`Gear ${plan.recommendedGear}`} color={gearColor(plan.recommendedGear)} />}
+            {plan.foundationVolatility && <Badge text={`Volatility ${plan.foundationVolatility}`} color={volColor(plan.foundationVolatility)} />}
+            {plan.gearReason && <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{plan.gearReason}</span>}
+          </div>
+
+          {Array.isArray(plan.goldenPath) && plan.goldenPath.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--ink-3)', marginBottom: 6 }}>Golden path (serial)</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                {plan.goldenPath.map((s: any, i: number) => (
+                  <React.Fragment key={i}>
+                    <span className="branch-chip" style={{ background: 'var(--pm-soft)', borderColor: 'var(--pm)', color: 'var(--pm)' }}>{s.id}: {s.name}</span>
+                    {i < plan.goldenPath.length - 1 && <span style={{ color: 'var(--ink-3)' }}>→</span>}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(plan.supportSlices) && plan.supportSlices.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--ink-3)', marginBottom: 6 }}>Support slices</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {plan.supportSlices.map((s: any, i: number) => (
+                  <span key={i} className="branch-chip">{s.id}: {s.name} <span style={{ opacity: 0.6 }}>· {s.category}</span></span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(plan.foundationFiles) && plan.foundationFiles.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--ink-3)', marginBottom: 6 }}>Foundation files (real — don't parallel-write)</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {plan.foundationFiles.map((f: any, i: number) => (
+                  <div key={i} style={{ fontSize: 12 }}>
+                    <code style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--ink)' }}>{f.path}</code>
+                    {f.why && <span style={{ color: 'var(--ink-3)' }}> — {f.why}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(plan.readOnlyAudits) && plan.readOnlyAudits.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--ink-3)', marginBottom: 6 }}>Proposed L1 read-only audits</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {plan.readOnlyAudits.map((a: any, i: number) => (
+                  <div key={i} className="box-soft" style={{ padding: '8px 10px', background: 'var(--paper-2)' }}>
+                    <div style={{ fontWeight: 700, fontSize: 12 }}>{a.agent}</div>
+                    {a.produces && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 2 }}>{a.produces}</div>}
+                    {Array.isArray(a.reads) && a.reads.length > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', marginTop: 4 }}>reads: {a.reads.join(', ')}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(plan.notParallelYet) && plan.notParallelYet.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--ink-3)', marginBottom: 6 }}>Not parallel-safe yet</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink-2)', fontSize: 12 }}>
+                {plan.notParallelYet.map((r: string, i: number) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {plan.nextStep && (
+            <div className="box-soft" style={{ padding: '10px 12px', background: 'var(--pm-soft)', borderColor: 'var(--pm)' }}>
+              <span style={{ fontWeight: 700, color: 'var(--pm)' }}>Next step: </span>
+              <span style={{ color: 'var(--ink-2)' }}>{plan.nextStep}</span>
+            </div>
+          )}
+
+          {record?.createdAt && <div style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>saved to .canopy/pm-plan.json · {new Date(record.createdAt).toLocaleString()}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Progress Board (global, bottom, collapsible) ────────────────────────────
+// Collapsed = a one-line MVP summary bar; expand = the slice tree with status.
+// Reads the structured truth from /api/pm/progress (.canopy/progress.json), NOT chat
+// memory — so it survives reload and follows the PM's real state. 7 internal states
+// fold into 5 CEO-facing labels (D3). See docs/PM_OPERATING_MODEL.md.
+function ProgressBoard({ workspacePath }: { workspacePath: string }) {
+  const [doc, setDoc] = useState<any>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = () => {
+    if (!workspacePath) return;
+    fetch(`http://localhost:3005/api/pm/progress?workspacePath=${encodeURIComponent(workspacePath)}`)
+      .then(r => r.json()).then(d => { if (d && d.slices) setDoc(d); }).catch(() => {});
+  };
+  useEffect(() => { load(); }, [workspacePath]);
+
+  if (!doc) return null;
+
+  const STATUS: Record<string, { label: string; color: string }> = {
+    accepted: { label: 'done', color: 'var(--approve)' },
+    in_progress: { label: 'working', color: 'var(--worker)' },
+    ai_verified: { label: 'needs you', color: 'var(--pm)' },
+    awaiting_human_acceptance: { label: 'needs you', color: 'var(--pm)' },
+    blocked: { label: 'blocked', color: '#c0392b' },
+    regressed: { label: 'blocked', color: '#c0392b' },
+    pending: { label: 'waiting', color: 'var(--ink-3)' },
+  };
+  const ui = (s: string) => STATUS[s] || STATUS.pending;
+  const Pill = ({ status }: { status: string }) => {
+    const u = ui(status);
+    return <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, color: u.color, border: `1px solid ${u.color}`, whiteSpace: 'nowrap' }}>{u.label}</span>;
+  };
+
+  const slices: any[] = doc.slices || [];
+  const accepted = slices.filter(s => s.status === 'accepted').length;
+  const isNeedsYou = (st: string) => st === 'ai_verified' || st === 'awaiting_human_acceptance';
+  const needsYou = slices.filter(s => isNeedsYou(s.status)).length
+    + slices.reduce((n, s) => n + (s.subtasks || []).filter((t: any) => isNeedsYou(t.status)).length, 0);
+  const working = slices.find(s => s.status === 'in_progress');
+  const pct = slices.length ? Math.round((accepted / slices.length) * 100) : 0;
+
+  return (
+    <div style={{ borderTop: '1.5px solid var(--rule)', background: 'var(--paper-2)', flexShrink: 0 }}>
+      {open && (
+        <div style={{ maxHeight: 320, overflow: 'auto', padding: '12px 18px', borderBottom: '1px solid var(--rule-soft)' }}>
+          <div style={{ maxWidth: 760, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1 }}>{doc.mvpGoal}</span>
+              <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, background: 'var(--worker-soft)', color: 'var(--worker)' }}>gear {doc.gear}</span>
+              <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, color: 'var(--pm)', border: '1px solid var(--pm)' }}>volatility {doc.volatility}</span>
+            </div>
+            {slices.map(s => (
+              <div key={s.id} style={{ marginBottom: 7 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <span style={{ fontWeight: s.status === 'in_progress' ? 700 : 400, flex: 1 }}>{s.id} · {s.name}</span>
+                  <Pill status={s.status} />
+                </div>
+                {(s.subtasks || []).length > 0 && (
+                  <div style={{ marginLeft: 14, paddingLeft: 12, borderLeft: '1px solid var(--rule-soft)', marginTop: 5, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {s.subtasks.map((t: any) => (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: 'var(--ink-2)' }}>
+                        <span style={{ flex: 1 }}>{t.name}</span><Pill status={t.status} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--rule-soft)', fontSize: 11, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
+              <span><span style={{ color: 'var(--approve)' }}>●</span> done</span>
+              <span><span style={{ color: 'var(--worker)' }}>●</span> working</span>
+              <span><span style={{ color: 'var(--pm)' }}>●</span> needs you</span>
+              <span><span style={{ color: 'var(--ink-3)' }}>●</span> waiting</span>
+              <span style={{ marginLeft: 'auto' }}>from .canopy/progress.json</span>
+            </div>
+          </div>
+        </div>
+      )}
+      <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '7px 18px', fontSize: 12 }}>
+        <span style={{ fontWeight: 700 }}>⎇ {(workspacePath.split(/[\\/]/).pop()) || 'Project'} MVP</span>
+        <div style={{ width: 80, height: 5, borderRadius: 999, background: 'var(--rule)', overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: 'var(--approve)' }} />
+        </div>
+        <span style={{ color: 'var(--ink-2)' }}>{accepted}/{slices.length}</span>
+        {working && <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, background: 'var(--worker-soft)', color: 'var(--worker)' }}>{working.id} working</span>}
+        {needsYou > 0 && <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, color: 'var(--pm)', border: '1px solid var(--pm)' }}>{needsYou} needs you</span>}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)' }}>
+          <span onClick={(e) => { e.stopPropagation(); load(); }} title="refresh">⟳</span>
+          <span>{open ? '▾ collapse' : '▴ progress map'}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const App: React.FC = () => {
   // Persisted
   const [config, setConfig] = useLocalStorage('ac_config', {
@@ -1743,12 +1990,23 @@ const App: React.FC = () => {
     setPmMessages(prev => [...prev, { role: 'user', content: 'Go over my project and tell me what it is.' }]);
     setIsPmThinking(true);
     try {
-      const res = await fetch('http://localhost:3005/api/project-review', {
+      // Mirror the CEO's language: detect from their most recent typed message
+      // (the Go-over button has no text of its own). No hardcoding — if they've been
+      // writing English, reply English; Chinese → Chinese. Let the model follow them.
+      const lastTyped = [...pmMessages].reverse().find(
+        m => m.role === 'user' && m.content && !m.content.startsWith('Go over my project')
+      )?.content || '';
+      const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
+      // Agentic, read-only: the PM explores the repo itself with read tools.
+      const res = await fetch('http://localhost:3005/api/pm/explore', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspacePath: config.projectPath }),
+        body: JSON.stringify({ workspacePath: config.projectPath, lang }),
       });
       const data = await res.json();
-      setPmMessages(prev => [...prev, { role: 'model', content: data.summary || (data.error ? `[ERROR] ${data.error}` : '[No response]') }]);
+      const filesNote = Array.isArray(data.filesRead) && data.filesRead.length > 0
+        ? `\n\n_— PM read ${data.filesRead.length} file(s): ${data.filesRead.slice(0, 12).join(', ')}${data.filesRead.length > 12 ? '…' : ''}_`
+        : '';
+      setPmMessages(prev => [...prev, { role: 'model', content: (data.summary || (data.error ? `[ERROR] ${data.error}` : '[No response]')) + filesNote }]);
     } catch {
       setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
     } finally { setIsPmThinking(false); }
@@ -2455,7 +2713,9 @@ const App: React.FC = () => {
                 <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
                   <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* First message — context-aware welcome (only when no additional messages exist) */}
-                    {pmMessages.length === 1 && (
+                    {/* PM onboarding intro + presets — shown whenever idle so guidance
+                        stays visible (was gated to a brand-new chat). Persistence TBD. */}
+                    {pmScreen === 'idle' && (
                       <div style={{ alignSelf: 'flex-start', maxWidth: '82%' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
                         <div className="box" style={{ background: 'var(--paper)', padding: '12px 16px', borderRadius: 8, fontSize: 14, lineHeight: 1.6, maxWidth: 580 }}>
@@ -2480,6 +2740,8 @@ const App: React.FC = () => {
                         )}
                       </div>
                     )}
+                    {/* PmPlanPanel intentionally NOT rendered here — S1 proved + persisted to
+                        .canopy/pm-plan.json. It returns as a preset-triggered inline result in S1.5. */}
                     {/* Additional PM messages (e.g. post-archive notification) */}
                     {pmMessages.slice(1).map((msg, i) => {
                       const isModel = msg.role === 'model';
@@ -2852,6 +3114,7 @@ const App: React.FC = () => {
           </div>
           );
         })()}
+        {config.projectPath && <ProgressBoard workspacePath={config.projectPath} />}
         <BottomBar
           backendStatus={backendStatus}
           model={config.defaultModel}

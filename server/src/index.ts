@@ -690,7 +690,13 @@ app.post('/api/project-review', async (req, res) => {
     try { topLevel = fs.readdirSync(workspacePath).filter(f => !['node_modules', '.git', 'dist', '.next', '.canopy'].includes(f)); } catch {}
     let docs: string[] = [];
     try { const d = path.join(workspacePath, 'docs'); if (fs.existsSync(d)) docs = fs.readdirSync(d).slice(0, 30); } catch {}
-    const prompt = `You are the PM. The user just pointed you at this project and asked you to get up to speed. Using ONLY the real files below, tell them in 3–5 sentences, plain and specific: what this project actually IS (its purpose/product), the tech stack, and the current state. Do NOT invent features or tech — if something isn't evident from these files, say so.
+    const prompt = `You are the PM. The user just pointed you at this project and asked you to get up to speed. Using ONLY the real files below, brief them.
+
+Format your reply as short, scannable Markdown — NOT one long paragraph. Use a few bold mini-headings with 1-2 sentences each, e.g.:
+**What it is** — …
+**Tech stack** — …
+**Current state** — …
+Keep it tight. Do NOT invent features or tech — if something isn't evident from these files, say so. Reply in the user's language if they wrote in a non-English language.
 
 === Top-level entries ===
 ${topLevel.join(', ') || '(none)'}
@@ -708,6 +714,210 @@ ${docs.join(', ') || '(no docs/ folder)'}`;
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- PM Parallelization Plan (S1 of the PM-model slice) ---
+// The PM reads the REAL project (file tree + key docs) and produces a structured
+// plan: golden path, foundation files, volatility, recommended gear, read-only audit
+// allocation. Output must reference real files so the CEO can verify it isn't canned.
+// Operating model: docs/PM_OPERATING_MODEL.md.
+
+const TREE_IGNORE = new Set([
+  'node_modules', '.git', 'dist', '.next', '.canopy', 'build', 'out',
+  'Library', 'Temp', 'Logs', '.vite', 'coverage', '.turbo', '.cache',
+]);
+
+/** Bounded recursive file listing (relative, forward-slashed) so the PM can name real files. */
+function walkTree(root: string, maxFiles = 400, maxDepth = 5): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (out.length >= maxFiles || depth > maxDepth) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.length >= maxFiles) return;
+      if (e.isDirectory()) {
+        if (TREE_IGNORE.has(e.name) || e.name.startsWith('.')) continue;
+        walk(path.join(dir, e.name), depth + 1);
+      } else {
+        out.push(path.relative(root, path.join(dir, e.name)).replace(/\\/g, '/'));
+      }
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+
+// Concise embedded operating model — travels with the PM (not read from the target
+// workspace), per the "Canopy ships its own copy" decision. Mirrors PM_OPERATING_MODEL.md.
+const PM_MODEL_PREAMBLE = `You are the PM (lead agent) of Canopy, a multi-agent dev platform. The human is the CEO and makes the final call. Plan by this operating model:
+- Work is organized as vertical slices. Find the GOLDEN PATH: the serial chain of required slices with HARD dependencies — they cannot be built in parallel because they share foundation (auth, data model, routing, shared state, API client, core pages). Separate these from beta/launch SUPPORT slices.
+- FOUNDATION FILES = real files multiple slices must touch (schema/migrations, routing, shared state, API client, shared components, core pages/data flow, backend contracts). Name the REAL ones from the file tree.
+- FOUNDATION VOLATILITY = how much those files are still changing. High if the active path spans many of them or they look unstable/early.
+- GEAR: L1 = read-only audit parallel ONLY (foundation unknown / volatility High). L2 = limited writes within ONE active slice, split by layer (only after interface contracts locked). L3 = multi-slice / multi-worktree parallel (only when foundation frozen / volatility Low). For an early or unstable project, default to L1.
+- Before any multi-agent WRITING, first dispatch READ-ONLY auditors that declare what they will read and report blockers; the PM then builds a conflict map. Do not jump to writing code.`;
+
+app.post('/api/pm/plan', async (req, res) => {
+  let { workspacePath, goal } = req.body || {};
+  if (!workspacePath || !goal) return res.status(400).json({ error: 'Missing workspacePath or goal' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  try {
+    const readMaybe = (rels: string[], max = 3500) => {
+      for (const rel of rels) {
+        const p = path.join(workspacePath, rel);
+        try { if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8').slice(0, max); } catch {}
+      }
+      return '';
+    };
+    const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
+    const pkg = readMaybe(['package.json'], 1200);
+    const mvp = readMaybe(['docs/MVP.md', '.canopy/MVP.md', 'MVP.md'], 2500);
+    const progress = readMaybe(['docs/PROGRESS.md', '.canopy/PROGRESS.md', 'PROGRESS.md'], 1500);
+    const tree = walkTree(workspacePath);
+
+    const nonEnglish = /[一-鿿぀-ヿ가-힯]/.test(goal || '');
+    const langDirective = nonEnglish
+      ? `\n\nLANGUAGE: write every human-readable string VALUE (names, reasons, "why", produces, nextStep) in the CEO's own language (the language of the goal), NOT English. JSON keys stay in English.`
+      : '';
+
+    const prompt = `${PM_MODEL_PREAMBLE}
+
+The CEO's goal: "${goal}"
+
+=== Project file tree (real paths, truncated) ===
+${tree.join('\n') || '(empty)'}
+
+=== README ===
+${readme || '(none)'}
+
+=== package.json ===
+${pkg || '(none)'}
+
+=== docs/MVP.md (if present) ===
+${mvp || '(none)'}
+
+=== docs/PROGRESS.md (if present) ===
+${progress || '(none)'}
+
+Using ONLY the real files above, output a Parallelization Plan as STRICT JSON (no prose before/after, no markdown fences). Reference REAL file paths from the tree — never invent files. Schema:
+{
+  "projectName": "<real product name from README/package.json>",
+  "summary": "<1-2 sentences: what this project is + current state>",
+  "goldenPath": [ { "id": "S1", "name": "<slice>", "dependsOn": "<id or 'none'>" } ],
+  "supportSlices": [ { "id": "S5", "name": "<slice>", "category": "beta" | "launch" } ],
+  "foundationFiles": [ { "path": "<real path from tree>", "why": "<role>" } ],
+  "foundationVolatility": "High" | "Medium" | "Low",
+  "recommendedGear": "L1" | "L2" | "L3",
+  "gearReason": "<why this gear now>",
+  "readOnlyAudits": [ { "agent": "<name>", "reads": ["<real path>"], "produces": "<deliverable>" } ],
+  "notParallelYet": [ "<reason multi-agent writing is unsafe now>" ],
+  "nextStep": "<the single concrete next action>"
+}${langDirective}`;
+
+    const raw = await getProvider().generateOnce(prompt);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return res.status(502).json({ error: 'PM did not return JSON', raw: raw.slice(0, 400) });
+    let plan: any;
+    try { plan = JSON.parse(jsonMatch[0]); }
+    catch (e: any) { return res.status(502).json({ error: 'PM JSON parse failed', raw: jsonMatch[0].slice(0, 400) }); }
+
+    const record = store.savePmPlan(workspacePath, {
+      goal, createdAt: new Date().toISOString(), model: getProvider().modelLabel, plan,
+    });
+    res.json(record);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/pm/plan', (req, res) => {
+  let ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (ws.startsWith('~')) ws = path.join(os.homedir(), ws.slice(1));
+  try { res.json(store.getPmPlan(ws) || { plan: null }); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// --- PM "go over my project" — AGENTIC, read-only ---
+// The model drives: we hand it read-only tools (list_files / read_file) and let it
+// explore the repo itself, like Claude Code / Codex would — no hand-fed file blob, no
+// extra restrictions. We only frame it as the PM and keep it read-only (the traffic
+// rules); the steering wheel is the model's. Returns its own-voice summary + the files
+// it chose to read (proof of agency).
+const EXPLORE_TOOLS = [
+  { name: 'list_files', description: 'List the project file tree (relative paths). Call this first to see what exists.', parameters: { type: 'OBJECT', properties: {}, required: [] } },
+  { name: 'read_file', description: 'Read a file by its relative path (from list_files).', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' } }, required: ['path'] } },
+];
+
+app.post('/api/pm/explore', async (req, res) => {
+  let { workspacePath } = req.body || {};
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  const tree = walkTree(workspacePath, 600, 6);
+  const filesRead: string[] = [];
+  const langCode = String(req.body?.lang || '').toLowerCase();
+  const langName =
+    /zh|cn|[一-鿿]/.test(langCode) ? '简体中文 (Simplified Chinese)' :
+    /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
+    /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
+
+  const system = `You are the PM (lead agent) of Canopy for THIS project. The CEO just asked you to get up to speed on it.
+
+You have READ-ONLY tools — actually USE them to explore, the way a capable engineer would: call list_files to see what exists, then read the files that reveal what this project is (README, package.json, docs/*, key source/config). You decide what to open — read whatever you need before answering. Do not guess about something you could just read.
+
+When you're done exploring, tell the CEO — in their own language — what this project actually IS (purpose/product), its tech stack, and its current state. Format as short, scannable Markdown with a few bold mini-headings. Be specific and grounded in what you read; if something genuinely isn't in the files, say so.${langName ? `\n\nIMPORTANT: Write your entire final briefing in ${langName}. Not English.` : ''}`;
+
+  try {
+    const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
+    let turn = await session.sendMessage('Start exploring this project now using your tools, then give me your briefing.');
+
+    for (let step = 0; step < 16; step++) {
+      if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+      const results = turn.toolCalls.map(call => {
+        if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
+        if (call.name === 'read_file') {
+          const rel = String((call.args as any)?.path || '');
+          filesRead.push(rel);
+          return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+        }
+        return { name: call.name, result: '[ERROR] unknown tool' };
+      });
+      turn = await session.sendToolResults(results);
+    }
+
+    res.json({
+      summary: turn.text || '(no summary returned)',
+      filesRead: [...new Set(filesRead)],
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Progress Map (structured source of truth for the global board) ---
+app.get('/api/pm/progress', (req, res) => {
+  let ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (ws.startsWith('~')) ws = path.join(os.homedir(), ws.slice(1));
+  try { res.json(store.getProgress(ws)); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/pm/progress', (req, res) => {
+  let { workspacePath, ...patch } = req.body || {};
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  try { res.json(store.saveProgress(workspacePath, patch)); }
+  catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(port, () => console.log(`Backend at ${port}`));
