@@ -1985,6 +1985,63 @@ const App: React.FC = () => {
     } finally { setIsPmThinking(false); }
   };
 
+  // Read-only & AGENTIC: the PM actually reads the project's real progress docs
+  // (docs/PROGRESS.md, MVP.md, status docs) and reports in its own voice with a
+  // follow-up. No worker, no branch, no view switch — inline in the PM chat.
+  const checkProgress = async () => {
+    if (isPmThinking) return;
+    const lastTyped = [...pmMessages].reverse().find(
+      m => m.role === 'user' && m.content && !m.content.startsWith('Check the current')
+    )?.content || '';
+    const zh = /[一-鿿぀-ヿ가-힯]/.test(lastTyped);
+    setPmMessages(prev => [...prev, { role: 'user', content: zh ? '看看目前的项目进展。' : 'Check the current project progress.' }]);
+    setIsPmThinking(true);
+    try {
+      const res = await fetch('http://localhost:3005/api/pm/progress-report', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath, lang: zh ? 'zh' : '' }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setPmMessages(prev => [...prev, { role: 'model', content: `[ERROR] ${data.error}` }]);
+        return;
+      }
+      const filesNote = Array.isArray(data.filesRead) && data.filesRead.length > 0
+        ? `\n\n_— PM read ${data.filesRead.length} file(s): ${data.filesRead.slice(0, 12).join(', ')}${data.filesRead.length > 12 ? '…' : ''}_`
+        : '';
+      setPmMessages(prev => [...prev, { role: 'model', content: (data.summary || '[No response]') + filesNote }]);
+    } catch {
+      setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
+    } finally { setIsPmThinking(false); }
+  };
+
+  const auditProject = async () => {
+    if (isPmThinking) return;
+    setPmMessages(prev => [...prev, { role: 'user', content: 'Plan agent dispatch — audit the project, then tell me the stage, golden path, gear, and how to split the work.' }]);
+    setIsPmThinking(true);
+    try {
+      const lastTyped = [...pmMessages].reverse().find(
+        m => m.role === 'user' && m.content && !m.content.startsWith('Make a parallelization')
+      )?.content || '';
+      const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
+      const res = await fetch('http://localhost:3005/api/pm/audit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath, lang }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setPmMessages(prev => [...prev, { role: 'model', content: `[ERROR] ${data.error}` }]);
+        return;
+      }
+      const auditorFooter = Array.isArray(data.auditors) && data.auditors.length > 0
+        ? `\n\n_— PM dispatched ${data.auditors.length} auditor(s) · ${data.totalFilesRead?.length ?? 0} files read total_\n_${data.auditors.map((a: any) => `${a.id}: ${a.filesRead?.length ?? 0} file(s)`).join(' · ')}_`
+        : '';
+      setPmMessages(prev => [...prev, { role: 'model', content: (data.ceobrief || '[No briefing]') + auditorFooter }]);
+    } catch {
+      setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
+    } finally { setIsPmThinking(false); }
+  };
+
   const reviewProject = async () => {
     if (isPmThinking) return;
     setPmMessages(prev => [...prev, { role: 'user', content: 'Go over my project and tell me what it is.' }]);
@@ -2025,7 +2082,26 @@ const App: React.FC = () => {
     };
     setMissions(prev => [...prev, mission]);
     setPendingAssignments([]);
-    setActiveView(mission.id);
+    // C: stay in the PM chat — do NOT switch to the mission view. Land back in the chat
+    // stream (in case dispatch fired from the full-screen plan view) so the running
+    // mission renders as a clickable inline card; clicking it opens the detail (D).
+    setActiveView('pm');
+    setPmScreen('idle');
+    const n = mission.assignments.length;
+    const zh = /[一-鿿぀-ヿ가-힯]/.test(mission.name);
+    setPmMessages(prev => [...prev, {
+      role: 'model',
+      content: zh
+        ? `▶ 已派发 **${mission.name}** — ${n} 个 worker 在各自分支上运行。我留在这儿,点下面的任务卡片可以进去看进度。`
+        : `▶ Dispatched **${mission.name}** — ${n} worker${n > 1 ? 's' : ''} running on their branches. I'll stay here; click the mission card below to watch it.`,
+    }]);
+  };
+
+  // Cancel/remove a mission (e.g. a stuck or unwanted one). Drops it from state; if it
+  // was the active view, return to the PM chat.
+  const dismissMission = (id: string) => {
+    setMissions(prev => prev.filter(m => m.id !== id));
+    setActiveView(prev => (prev === id ? 'pm' : prev));
   };
 
   const updateAssignment = (missionId: string, assignmentId: number, update: Partial<Assignment> | ((a: Assignment) => Assignment)) => {
@@ -2732,9 +2808,15 @@ const App: React.FC = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, maxWidth: 580 }}>
                             <button onClick={() => { if (!isPmThinking) reviewProject(); }} style={{ textAlign: 'left', fontSize: 13, padding: '10px 12px', borderRadius: 6, background: 'var(--pm-soft)', color: 'var(--pm)', border: '1.5px solid var(--pm)', fontWeight: 600, cursor: 'pointer' }}>🔍 Go over my project — read the docs &amp; tell me what it is</button>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {['Plan a feature', 'Plan a refactor', 'Audit the codebase', 'Set up CI'].map(chip => (
-                                <button key={chip} onClick={() => { if (!isPmThinking) sendPmMessage(chip); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>{chip}</button>
+                              {/* Read-only: PM reads progress.json itself, reports inline. No worker. */}
+                              <button onClick={() => { if (!isPmThinking) checkProgress(); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>Check project progress</button>
+                              {[
+                                { label: 'Build project foundation', msg: 'Help me build the project foundation: create docs/MVP.md, docs/PROGRESS.md, and docs/ACCEPTANCE.md for this project.' },
+                                { label: 'Plan development', msg: 'Make a development plan for this project — lay out the required vertical slices, priorities, and what to tackle first.' },
+                              ].map(({ label, msg }) => (
+                                <button key={label} onClick={() => { if (!isPmThinking) sendPmMessage(msg); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>{label}</button>
                               ))}
+                              <button onClick={() => { if (!isPmThinking) auditProject(); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>Plan agent dispatch</button>
                             </div>
                           </div>
                         )}
@@ -2790,6 +2872,36 @@ const App: React.FC = () => {
                         <button onClick={dispatchMission} style={{ fontSize: 13, padding: '8px 18px', background: 'var(--review)', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 700, cursor: 'pointer' }}>▶ Dispatch {pendingAssignments.length} worker{pendingAssignments.length > 1 ? 's' : ''}</button>
                       </div>
                     )}
+                    {/* D: running missions as inline, clickable cards — stay in chat,
+                        click a card to open its detail view. */}
+                    {runningMissions.map(m => {
+                      const total = m.assignments?.length ?? 0;
+                      const done = (m.assignments ?? []).filter(a => a.status === 'done').length;
+                      const waiting = (m.assignments ?? []).filter(a => a.pendingAction).length;
+                      return (
+                        <div key={m.id} onClick={() => setActiveView(m.id)} className="box" style={{ alignSelf: 'flex-start', width: '100%', maxWidth: 600, cursor: 'pointer', padding: '12px 14px', background: 'var(--paper)', borderColor: 'var(--approve)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--approve)' }} />
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)' }}>
+                              {done}/{total} done{waiting > 0 ? ` · ${waiting} awaiting you` : ''} · open ›
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); dismissMission(m.id); }}
+                              title="Cancel this mission"
+                              style={{ fontSize: 13, lineHeight: 1, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)', cursor: 'pointer' }}
+                            >✕</button>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {(m.assignments ?? []).map(a => (
+                              <span key={a.id} style={{ fontSize: 11, fontFamily: 'var(--mono)', background: 'var(--paper-2)', border: `1px solid ${a.pendingAction ? 'var(--warn)' : 'var(--rule)'}`, color: a.pendingAction ? 'var(--warn)' : 'var(--ink-2)', borderRadius: 3, padding: '1px 6px' }}>
+                                {a.agentId} · {a.pendingAction ? 'waiting' : a.status}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                     <div ref={chatEndRef} />
                   </div>
                 </div>

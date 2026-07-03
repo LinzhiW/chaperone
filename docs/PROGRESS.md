@@ -26,11 +26,30 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
   [done]    ProgressBoard — global collapsible bottom bar reads .canopy/progress.json;
             collapsed: project/gear/counts/badges; expanded: full slice tree with subtasks.
             CEO: "可以这个位置不错" (position good; label "vertical slices" noted for later)
-  [pending] remaining presets wired (parallelize / check progress) — deferred to S2 phase
+  [done]    presets rewired: Check progress + Plan agent dispatch now agentic (see S2 log)
 
-[pending] S2   PM dispatches read-only L1 audits
+[ai_verified] S2 PM dispatches read-only L1 audits  (backend built; CEO click-test pending)
+  [done]    /api/pm/audit — 3-phase: PM decides auditor count → parallel read-only fan-out
+            → PM consolidates. PM chooses N auditors (not hardcoded).
+  [done]    consolidation upgraded: embeds PM_MODEL_PREAMBLE + gold-standard structure
+            (stage → golden path+deps → slice class → foundation+volatility → gear+reason
+            → concrete allocation → recommendation+question). Verified on phrasewise.
+  [done]    "Plan agent dispatch" chip (renamed from "Make a parallelization plan")
 [pending] S3   Worker edits a real file on a branch
 [pending] S4   Checkpoint + Reviewer + merge
+```
+
+## Workflow-routing fixes (this session)
+```
+A  /api/ceo/chat: PLAN mode gated to explicit code-change requests only; read/understand/
+   audit/progress → MESSAGE (PM's own work, no worker dispatch). Verified via curl.
+B  "Check project progress" → agentic /api/pm/progress-report: PM reads real PROGRESS.md/
+   MVP.md/status docs, reports in own voice + follow-up. (Was: dead render of seeded JSON.)
+C  dispatchMission no longer switches views — stays in PM chat, drops a trace message.
+D  Running missions render as inline clickable cards in the chat; click → detail view.
+   + dismiss (✕) to cancel stuck/unwanted missions.
+FIX seed pollution: getProgress no longer fabricates Canopy's own slices into every
+   project (was polluting phrasewise with S1-S4). Returns EMPTY map when none exists.
 ```
 
 ## Foundation Files (manifest — volatility measured against this list)

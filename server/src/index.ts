@@ -366,8 +366,11 @@ You respond in ONE of three modes, signalled by a leading control marker on the 
    Each question: a short "key", a human "label", and 2-4 "options" chips.
    After the markers, write one sentence telling the user you need a bit more info.
 
-2) PLAN — when the brief is CLEAR (or after the user answered your questions),
-   output the task plan as a JSON array wrapped in <<<TASK_PLAN>>> markers:
+2) PLAN — ONLY when the user is EXPLICITLY asking you to WRITE, MODIFY, ADD, FIX, or
+   REFACTOR code / files (a build request that will change the repo), AND the brief is
+   CLEAR (or the user already answered your questions). PLAN dispatches real workers on
+   git branches — never use it for anything read-only.
+   Output the task plan as a JSON array wrapped in <<<TASK_PLAN>>> markers:
 <<<TASK_PLAN>>>
 [
   {
@@ -386,11 +389,14 @@ You respond in ONE of three modes, signalled by a leading control marker on the 
 <<<END_TASK_PLAN>>>
    Then explain the plan in 2-3 sentences.
 
-3) MESSAGE — for general conversation (not a goal/feature request), just reply
-   normally with no markers.
+3) MESSAGE — the DEFAULT. For general conversation AND for any request to UNDERSTAND,
+   READ, EXPLAIN, SUMMARIZE, REVIEW, AUDIT, or REPORT on the project or its progress.
+   These are YOUR OWN read-only work as the PM — do them yourself in prose, do NOT
+   dispatch workers. Just reply normally with no markers.
 
 Rules:
 - ALWAYS reply in the SAME language the user writes in (e.g. Chinese in -> Chinese out). This applies to all prose, clarifying-question labels/options, and plan explanations.
+- CRITICAL: Only enter PLAN mode when the user explicitly wants code CHANGED (build/add/fix/refactor/modify). "Look at / go over / understand / check progress / explain / audit / what is this project" are READ-ONLY — answer them yourself in MESSAGE mode, never dispatch a worker or branch for them. Reading files is the PM's own job.
 - Use CLARIFY at most once per brief; if the user already answered, go straight to PLAN.
 - agent_id must be unique and descriptive (e.g. "frontend-worker", "data-worker").
 - branch_name must follow git convention: feat/<short-slug>.
@@ -903,6 +909,68 @@ When you're done exploring, tell the CEO — in their own language — what this
   }
 });
 
+// --- PM "check progress" — AGENTIC, read-only ---
+// Reads the project's REAL progress sources (docs/PROGRESS.md, docs/MVP.md, status docs)
+// and reports in its own voice. Replaces the old deterministic JSON render that showed a
+// generic seed. Model drives; we only frame it + keep it read-only.
+app.post('/api/pm/progress-report', async (req, res) => {
+  let { workspacePath } = req.body || {};
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  const tree = walkTree(workspacePath, 600, 6);
+  const filesRead: string[] = [];
+  const langCode = String(req.body?.lang || '').toLowerCase();
+  const langName =
+    /zh|cn|[一-鿿]/.test(langCode) ? '简体中文 (Simplified Chinese)' :
+    /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
+    /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
+
+  const system = `You are the PM (lead agent) for THIS project. The CEO is asking where the project stands right now.
+
+You have READ-ONLY tools — USE them. Read the project's REAL progress sources: docs/PROGRESS.md, docs/MVP.md, docs/ACCEPTANCE.md, docs/PROJECT_STATE.md, docs/TODO.md, docs/PLAN.md, or any status/roadmap docs you find. Read whatever you need before answering — do not guess.
+
+Then tell the CEO, grounded in what you actually read:
+- What's DONE (which slices/milestones are accepted or complete)
+- What's IN PROGRESS right now
+- What's NEXT / the immediate next step
+- Any blockers or risks
+
+If this project has NO real progress tracking (no PROGRESS.md / MVP.md / status docs), say so honestly and offer to build the three-piece set (MVP.md / PROGRESS.md / ACCEPTANCE.md) by reading the project — do NOT invent progress.
+
+Format as short scannable Markdown with bold mini-headings. Be specific — cite real file names and real slice/milestone names from the docs. End with ONE natural follow-up question about what the CEO wants to do next.${langName ? `\n\nIMPORTANT: Write your entire reply in ${langName}. Not English.` : ''}`;
+
+  try {
+    const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
+    let turn = await session.sendMessage('Check where this project stands now using your tools, then report to me.');
+
+    for (let step = 0; step < 16; step++) {
+      if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+      const results = turn.toolCalls.map(call => {
+        if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
+        if (call.name === 'read_file') {
+          const rel = String((call.args as any)?.path || '');
+          filesRead.push(rel);
+          return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+        }
+        return { name: call.name, result: '[ERROR] unknown tool' };
+      });
+      turn = await session.sendToolResults(results);
+    }
+
+    res.json({
+      summary: turn.text || '(no summary returned)',
+      filesRead: [...new Set(filesRead)],
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Progress Map (structured source of truth for the global board) ---
 app.get('/api/pm/progress', (req, res) => {
   let ws = getWorkspacePath(req);
@@ -918,6 +986,152 @@ app.put('/api/pm/progress', (req, res) => {
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
   try { res.json(store.saveProgress(workspacePath, patch)); }
   catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// --- PM L1 Audit — multi-agent read-only fan-out (S2) ---
+// Phase 1: PM decides how many auditors + their domains (model chooses, not hardcoded).
+// Phase 2: Run each auditor in parallel — each gets the same read-only tools and its own focus.
+// Phase 3: PM consolidates findings → Foundation Files list + CEO Briefing.
+app.post('/api/pm/audit', async (req, res) => {
+  let { workspacePath } = req.body || {};
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  const tree = walkTree(workspacePath, 600, 6);
+  const langCode = String(req.body?.lang || '').toLowerCase();
+  const langName =
+    /zh|cn|[一-鿿]/.test(langCode) ? '简体中文 (Simplified Chinese)' :
+    /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
+    /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
+
+  const AUDIT_TOOLS = [
+    { name: 'list_files', description: 'List the project file tree (relative paths).', parameters: { type: 'OBJECT', properties: {}, required: [] } },
+    { name: 'read_file', description: 'Read a file by its relative path.', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' } }, required: ['path'] } },
+  ];
+
+  try {
+    // ── Phase 1: PM decides the audit plan ──────────────────────────────────
+    const planSession = getProvider().startChat({
+      system: `You are the PM. Plan a read-only L1 audit for this project.
+
+Given the file tree, decide how many read-only auditors to dispatch and what each should focus on.
+Respond with ONLY a JSON array — no markdown fences, no explanation:
+[
+  {"id": "FE-Auditor", "focus": "frontend components, routing, state", "hint": "start with src/"},
+  {"id": "BE-Auditor", "focus": "API endpoints, persistence, backend logic", "hint": "start with server/"}
+]
+
+Rules:
+- 1 to 4 auditors (match project complexity — small project = 1-2, large = 3-4)
+- Each auditor covers a distinct non-overlapping domain
+- Use role-based ids: FE-Auditor, BE-Auditor, Data-Auditor, Infra-Auditor, etc.`,
+      tools: [],
+    });
+
+    const planTurn = await planSession.sendMessage(
+      `File tree:\n${tree.slice(0, 300).join('\n')}\n\nDecide the audit plan now. JSON only.`
+    );
+
+    let auditorSpecs: { id: string; focus: string; hint?: string }[] = [];
+    try {
+      const jsonMatch = planTurn.text.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) auditorSpecs = JSON.parse(jsonMatch[0]);
+    } catch {}
+    if (!auditorSpecs.length) auditorSpecs = [{ id: 'PM-Auditor', focus: 'full project overview' }];
+
+    // ── Phase 2: Fan-out — all auditors run in parallel ─────────────────────
+    const auditorResults = await Promise.all(auditorSpecs.map(async (spec) => {
+      const filesRead: string[] = [];
+      const session = getProvider().startChat({
+        system: `You are ${spec.id}, a read-only L1 auditor. Your focus: ${spec.focus}.
+
+Use your tools to explore the relevant parts of this project. Read the files that matter to your domain.
+After exploring, write a concise findings report covering:
+- Key files in your domain and their roles
+- Current state / health
+- Integration points and dependencies on other parts
+- Any gaps, risks, or missing pieces
+
+Read-only only — do not suggest changes, just report what you find.`,
+        tools: AUDIT_TOOLS,
+      });
+
+      let turn = await session.sendMessage(
+        `File tree:\n${tree.join('\n')}\n\nStart your audit now.${spec.hint ? ` ${spec.hint}` : ''}`
+      );
+
+      for (let step = 0; step < 16; step++) {
+        if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+        const results = turn.toolCalls.map(call => {
+          if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
+          if (call.name === 'read_file') {
+            const rel = String((call.args as any)?.path || '');
+            filesRead.push(rel);
+            return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+          }
+          return { name: call.name, result: '[ERROR] unknown tool' };
+        });
+        turn = await session.sendToolResults(results);
+      }
+
+      return {
+        id: spec.id,
+        focus: spec.focus,
+        findings: turn.text || '(no findings)',
+        filesRead: [...new Set(filesRead)],
+      };
+    }));
+
+    // ── Phase 3: PM consolidates ─────────────────────────────────────────────
+    const allFindings = auditorResults.map(r =>
+      `=== ${r.id} (focus: ${r.focus}) ===\nFiles read: ${r.filesRead.join(', ') || '(none)'}\n\n${r.findings}`
+    ).join('\n\n---\n\n');
+
+    const consolidateSession = getProvider().startChat({
+      system: `${PM_MODEL_PREAMBLE}
+
+You just received read-only audit reports from ${auditorResults.length} auditor(s). Now produce your PM dispatch assessment — NOT a generic tech audit. Apply the operating model above and structure it EXACTLY like this:
+
+**当前阶段判断 / Stage** — What stage is this project really at? Is it a serial Golden Path chain + support slices, or genuinely parallel-safe? Correct any naive "N parallel slices" reading.
+**Golden Path + 依赖 / dependencies** — The serial main chain of required slices (S1→S2→…) with their HARD dependencies, and WHY they can't be built in parallel.
+**Slice 分类** — Split slices into: core Golden Path · beta/support · launch/commercial.
+**Foundation Files + 波动率 / volatility** — List the REAL foundation files (from what the auditors read) and judge volatility High/Medium/Low with reasoning.
+**推荐档位 / Recommended gear (L1/L2/L3) + 理由** — Which parallel level is safe NOW, with explicit reasons referencing the gates (are foundation files written into PROGRESS.md? does the active path cross many files? uncommitted changes? Phase 1 declarations done? interface contracts locked?). Early/unstable → L1.
+**具体分配 / Concrete allocation** — If L1: which read-only auditors, each with read scope + deliverable. If L2: which layers within the ONE active slice, allowed/forbidden files. Name real files.
+**结论 + 下一步 / Recommendation + question** — A clear recommendation (usually: don't widen the battle line; do the safe level first), then ask the CEO ONE concrete question about what they want to do next.
+
+Be specific and grounded — cite real file names and real slice names from the audits. Do not invent files the auditors didn't find.${langName ? `\n\nWrite your entire reply in ${langName}.` : ''}`,
+      tools: [],
+    });
+
+    const consolidateTurn = await consolidateSession.sendMessage(
+      `Auditor reports:\n\n${allFindings}\n\nProduce your PM dispatch assessment now, following the required structure.`
+    );
+
+    const totalFilesRead = [...new Set(auditorResults.flatMap(r => r.filesRead))];
+
+    // Update progress: S2 → ai_verified
+    try {
+      const current = store.getProgress(workspacePath);
+      store.saveProgress(workspacePath, {
+        slices: current.slices.map(s =>
+          s.id === 'S2' ? { ...s, status: 'ai_verified' as const } : s
+        ),
+      });
+    } catch {}
+
+    res.json({
+      ceobrief: consolidateTurn.text || '(no briefing)',
+      auditors: auditorResults,
+      totalFilesRead,
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(port, () => console.log(`Backend at ${port}`));

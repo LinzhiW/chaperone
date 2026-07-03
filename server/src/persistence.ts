@@ -230,29 +230,23 @@ export interface ProgressDoc {
   updatedAt: string;
 }
 
-// Seed reflects the real current state of Canopy's own MVP (dogfooding).
-const SEED_PROGRESS: ProgressDoc = {
-  mvpGoal: 'CEO briefs a goal → PM plans → Workers build on branches → CEO reviews & merges',
+// An EMPTY map for a project with no progress tracking yet. We must NOT fabricate slices:
+// a fresh project honestly has none until the PM builds them by reading the project.
+// (Canopy's own dogfooding slices live in agent-company's real .canopy/progress.json, not
+// in a code seed that would pollute every other project — that was the bug.)
+const EMPTY_PROGRESS: ProgressDoc = {
+  mvpGoal: '',
   gear: 'L1',
   volatility: 'High',
-  slices: [
-    { id: 'S1',   name: 'PM produces a real plan',            kind: 'golden', status: 'accepted', subtasks: [] },
-    { id: 'S1.5', name: 'PM actions agentic + presets',       kind: 'golden', status: 'accepted', subtasks: [] },
-    { id: 'S2',   name: 'PM dispatches read-only L1 audits',  kind: 'golden', status: 'pending',  subtasks: [] },
-    { id: 'S3',   name: 'Worker edits a real file on a branch', kind: 'golden', status: 'pending', subtasks: [] },
-    { id: 'S4',   name: 'Checkpoint + Reviewer + merge',      kind: 'golden', status: 'pending',  subtasks: [] },
-  ],
+  slices: [],
   updatedAt: new Date().toISOString(),
 };
 
-/** On first GET, seed from the current MVP slices. PM updates it thereafter. */
+/** Return the real progress map if it exists; otherwise an EMPTY map (no fabrication). */
 export function getProgress(workspacePath: string): ProgressDoc {
   const p = filePath(workspacePath, PROGRESS_FILE);
-  if (!fs.existsSync(p)) {
-    writeJson(workspacePath, PROGRESS_FILE, SEED_PROGRESS);
-    return SEED_PROGRESS;
-  }
-  return readJson<ProgressDoc>(workspacePath, PROGRESS_FILE, SEED_PROGRESS);
+  if (!fs.existsSync(p)) return EMPTY_PROGRESS;
+  return readJson<ProgressDoc>(workspacePath, PROGRESS_FILE, EMPTY_PROGRESS);
 }
 
 export function saveProgress(workspacePath: string, doc: Partial<ProgressDoc>): ProgressDoc {
