@@ -1824,6 +1824,9 @@ const App: React.FC = () => {
   const [onboardingPhase, setOnboardingPhase] = useState<'welcome' | 'scan' | 'docs' | 'ready' | 'done'>(initialPhase);
   const [onbPath, setOnbPath] = useState('');
   const [onbKey, setOnbKey] = useState(config.googleKey || '');
+  // New-conversation / clear-chat flow (safe: checkpoints to docs first).
+  const [showClearPanel, setShowClearPanel] = useState(false);
+  const [isCheckpointing, setIsCheckpointing] = useState(false);
   // Which docs the user chose to draft (set when entering 'docs' phase)
   const [docsChoice, setDocsChoice] = useState<'all' | 'prd' | 'skip'>('all');
   // Current doc step in HITL flow: 0=PRD 1=SOP 2=DevLog
@@ -2102,6 +2105,52 @@ const App: React.FC = () => {
   const dismissMission = (id: string) => {
     setMissions(prev => prev.filter(m => m.id !== id));
     setActiveView(prev => (prev === id ? 'pm' : prev));
+  };
+
+  // Reset the PM conversation to a clean welcome. Missions are stored separately
+  // (ac_missions) so they survive — the chat thread is scratch, the docs are memory.
+  const resetConversation = () => {
+    setPmMessages([{
+      role: 'model',
+      content: "Welcome. I'm your Project Orchestrator — I plan, never execute.\n\nDescribe what you want to build and I'll draft a mission plan for your team.",
+    }]);
+    setPmScreen('idle');
+    setPendingAssignments([]);
+    setShowClearPanel(false);
+  };
+
+  // Safe clear: first checkpoint the conversation's decisions/progress to the docs
+  // (the PM's durable memory), then reset. Makes "nothing is lost" literally true.
+  const checkpointAndClear = async () => {
+    if (isCheckpointing) return;
+    setIsCheckpointing(true);
+    try {
+      const lastTyped = [...pmMessages].reverse().find(m => m.role === 'user' && m.content)?.content || '';
+      const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
+      const res = await fetch('http://localhost:3005/api/pm/checkpoint', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath, history: pmMessages, lang }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        // Don't clear if the save failed — protect the user's history.
+        setPmMessages(prev => [...prev, { role: 'model', content: `[Checkpoint failed — not clearing] ${data.error}` }]);
+        setShowClearPanel(false);
+        return;
+      }
+      const wroteNote = Array.isArray(data.wrote) && data.wrote.length > 0
+        ? `\n\n_— saved to: ${data.wrote.join(', ')}_`
+        : '';
+      // Show what was saved, then reset to a clean thread.
+      resetConversation();
+      setPmMessages([{
+        role: 'model',
+        content: (data.summary || 'Checkpoint done.') + wroteNote,
+      }]);
+    } catch {
+      setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running? Not clearing.' }]);
+      setShowClearPanel(false);
+    } finally { setIsCheckpointing(false); }
   };
 
   const updateAssignment = (missionId: string, assignmentId: number, update: Partial<Assignment> | ((a: Assignment) => Assignment)) => {
@@ -2788,6 +2837,57 @@ const App: React.FC = () => {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
                   <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {/* Auto-compaction hint — long threads drift/hallucinate; nudge a clean
+                        restart (checkpointing to docs first). ~30 msgs ≈ getting heavy. */}
+                    {pmMessages.length > 30 && !showClearPanel && (
+                      <div className="box" style={{ borderColor: 'var(--worker)', background: 'var(--worker-soft)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1, lineHeight: 1.5 }}>
+                          This conversation is getting long — I stay sharpest on a fresh thread. I can save decisions & progress to your docs, then start clean.
+                        </span>
+                        <button
+                          onClick={() => setShowClearPanel(true)}
+                          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 5, background: 'var(--worker)', color: 'var(--paper)', border: 'none', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >Checkpoint & start fresh</button>
+                      </div>
+                    )}
+                    {/* New-conversation toolbar — only when there's a thread to clear. Safe
+                        because decisions/progress checkpoint to docs first. */}
+                    {pmMessages.length > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => setShowClearPanel(v => !v)}
+                          title="Start a fresh conversation with the PM"
+                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 999, background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                        >↻ New conversation</button>
+                      </div>
+                    )}
+                    {showClearPanel && (
+                      <div className="box" style={{ borderColor: 'var(--pm)', background: 'var(--pm-soft)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pm)' }}>Start a new conversation?</div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+                          Safe to clear — I'll first save any <strong>decisions</strong> and <strong>progress</strong> from this chat into your project docs
+                          (<span className="mono" style={{ fontSize: 11 }}>docs/DECISIONS.md</span> · <span className="mono" style={{ fontSize: 11 }}>docs/PROGRESS.md</span>),
+                          so nothing important is lost. Your missions are stored separately and stay untouched. My memory lives in the docs, not this thread.
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+                          <button
+                            onClick={checkpointAndClear}
+                            disabled={isCheckpointing}
+                            style={{ fontSize: 12, padding: '7px 14px', borderRadius: 5, background: 'var(--pm)', color: 'var(--paper)', border: 'none', fontWeight: 600, cursor: isCheckpointing ? 'wait' : 'pointer', opacity: isCheckpointing ? 0.7 : 1 }}
+                          >{isCheckpointing ? 'Saving to docs…' : 'Save to docs & clear'}</button>
+                          <button
+                            onClick={resetConversation}
+                            disabled={isCheckpointing}
+                            title="Clear without saving (for testing)"
+                            style={{ fontSize: 12, padding: '7px 12px', borderRadius: 5, background: 'transparent', color: 'var(--ink-2)', border: '1px solid var(--rule)', cursor: 'pointer' }}
+                          >Clear without saving</button>
+                          <button
+                            onClick={() => setShowClearPanel(false)}
+                            style={{ fontSize: 12, padding: '7px 10px', borderRadius: 5, background: 'transparent', color: 'var(--ink-3)', border: 'none', cursor: 'pointer' }}
+                          >Cancel</button>
+                        </div>
+                      </div>
+                    )}
                     {/* First message — context-aware welcome (only when no additional messages exist) */}
                     {/* PM onboarding intro + presets — shown whenever idle so guidance
                         stays visible (was gated to a brand-new chat). Persistence TBD. */}

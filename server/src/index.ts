@@ -85,6 +85,23 @@ const readFile = (filePath: string, workspacePath: string): string => {
   catch (err: any) { return `[ERROR] ${err.message}`; }
 };
 
+// Controlled, append-only write — scoped to docs/*.md. Used by the PM checkpoint so
+// clearing a conversation is safe: decisions/progress get persisted to the durable docs
+// (the PM's real memory) rather than living only in the chat transcript.
+const ALLOWED_DOC_RE = /^docs\/[A-Za-z0-9_.-]+\.md$/;
+const appendDoc = (rel: string, content: string, workspacePath: string): string => {
+  if (!ALLOWED_DOC_RE.test(rel)) return `[ERROR] can only append to docs/*.md, got: ${rel}`;
+  try {
+    const docsDir = path.resolve(workspacePath, 'docs');
+    const abs = path.resolve(workspacePath, rel);
+    if (!abs.startsWith(docsDir + path.sep) && abs !== docsDir) return '[ERROR] path escapes docs/';
+    fs.mkdirSync(docsDir, { recursive: true });
+    const existed = fs.existsSync(abs);
+    fs.appendFileSync(abs, (existed ? '\n' : '') + content.trim() + '\n');
+    return `[OK] appended ${content.length} chars to ${rel}${existed ? '' : ' (created)'}`;
+  } catch (err: any) { return `[ERROR] ${err.message}`; }
+};
+
 const writeFile = (filePath: string, content: string, workspacePath: string): string => {
   try {
     const fullPath = path.resolve(workspacePath, filePath);
@@ -963,6 +980,80 @@ Format as short scannable Markdown with bold mini-headings. Be specific — cite
     res.json({
       summary: turn.text || '(no summary returned)',
       filesRead: [...new Set(filesRead)],
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- PM checkpoint — persist the conversation's decisions/progress to docs ---
+// So clearing a conversation is SAFE: the PM's real memory lives in durable docs, not
+// the transcript. The PM reviews the chat, appends real DECISIONS to docs/DECISIONS.md
+// and a timestamped progress note to docs/PROGRESS.md. Read-then-append (never destroys).
+const CHECKPOINT_TOOLS = [
+  { name: 'read_file', description: 'Read a doc to match its existing format before appending.', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' } }, required: ['path'] } },
+  { name: 'append_doc', description: 'Append content to a docs/*.md file (created if missing). Use for DECISIONS.md / PROGRESS.md.', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' }, content: { type: 'STRING' } }, required: ['path', 'content'] } },
+];
+
+app.post('/api/pm/checkpoint', async (req, res) => {
+  let { workspacePath, history } = req.body || {};
+  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  const transcript = Array.isArray(history)
+    ? history.map((m: any) => `${m.role === 'user' ? 'CEO' : 'PM'}: ${m.content || ''}`).join('\n\n')
+    : String(req.body?.transcript || '');
+  const langCode = String(req.body?.lang || '').toLowerCase();
+  const langName =
+    /zh|cn|[一-鿿]/.test(langCode) ? '简体中文 (Simplified Chinese)' :
+    /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
+    /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
+  const wrote: string[] = [];
+  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+  const system = `You are the PM. The CEO is about to CLEAR this conversation. Before it's gone, PRESERVE anything important so nothing is lost — because your real memory lives in the project docs, not the chat.
+
+Review the conversation. Then:
+1. For each real DECISION reached (a choice, a direction, a tradeoff settled), append it to docs/DECISIONS.md. First read_file docs/DECISIONS.md to match its format; if it doesn't exist, create a sensible entry with today's date (${now}).
+2. If real PROGRESS/state changed (a slice advanced, something got built/verified, a blocker found), append a short timestamped note to docs/PROGRESS.md (read it first to match its Timestamped Log format; use "${now} — by PM (checkpoint)").
+
+Rules:
+- Only record things that ACTUALLY matter. Skip small talk, questions, and things already in the docs.
+- If nothing important was decided or changed, write NOTHING and just say so.
+- Never rewrite or delete existing content — append only.
+
+When done, tell the CEO in a short bullet list exactly what you saved and to which files (so they can clear with confidence).${langName ? `\n\nWrite your final reply in ${langName}.` : ''}`;
+
+  try {
+    const session = getProvider().startChat({ system, tools: CHECKPOINT_TOOLS });
+    let turn = await session.sendMessage(`Here is the conversation to checkpoint:\n\n${transcript.slice(0, 24000)}\n\nPreserve what matters now, then report what you saved.`);
+
+    for (let step = 0; step < 12; step++) {
+      if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+      const results = turn.toolCalls.map(call => {
+        if (call.name === 'read_file') {
+          const rel = String((call.args as any)?.path || '');
+          return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+        }
+        if (call.name === 'append_doc') {
+          const rel = String((call.args as any)?.path || '');
+          const content = String((call.args as any)?.content || '');
+          const r = appendDoc(rel, content, workspacePath);
+          if (r.startsWith('[OK]') && !wrote.includes(rel)) wrote.push(rel);
+          return { name: call.name, result: r };
+        }
+        return { name: call.name, result: '[ERROR] unknown tool' };
+      });
+      turn = await session.sendToolResults(results);
+    }
+
+    res.json({
+      summary: turn.text || '(nothing to save)',
+      wrote,
       model: getProvider().modelLabel,
     });
   } catch (err: any) {
