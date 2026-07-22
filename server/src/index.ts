@@ -4,7 +4,7 @@ import { simpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getProvider } from './providers';
+import { getProvider, setProviderOverride, getProviderOverride, availableProviders, ProviderId } from './providers';
 import { ChatSession } from './providers/types';
 import * as store from './persistence';
 import { exec, execFile } from 'child_process';
@@ -1300,6 +1300,117 @@ Be specific and grounded — cite real file names and real slice names from the 
     console.error(err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- S5: L2 layered parallel plan + overlap gate ---
+// For ONE active slice, the PM splits work by LAYER (UI / persistence / tests), assigns
+// each worker allowed/forbidden files, and defines interface contracts. Then a DETERMINISTIC
+// overlap check flags any two workers claiming the same file — the conflict gate that makes
+// L2 safe. Model reads real files (agentic) so file ownership is real.
+app.post('/api/pm/l2-plan', async (req, res) => {
+  let { workspacePath, slice } = req.body || {};
+  if (!workspacePath || !slice) return res.status(400).json({ error: 'Missing workspacePath or slice' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+
+  const tree = walkTree(workspacePath, 600, 6);
+  const filesRead: string[] = [];
+  const PLAN_TOOLS = [
+    { name: 'list_files', description: 'List the project file tree.', parameters: { type: 'OBJECT', properties: {}, required: [] } },
+    { name: 'read_file', description: 'Read a file by relative path.', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' } }, required: ['path'] } },
+  ];
+
+  const system = `${PM_MODEL_PREAMBLE}
+
+The CEO has approved working on ONE active slice at Level 2 (limited concurrent writes within this single slice, split by layer). Use your READ-ONLY tools to read the real files this slice touches, then produce a concrete L2 dispatch.
+
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "slice": "<the slice>",
+  "contracts": [
+    { "name": "<function/endpoint>", "input": "<shape>", "output": "<shape>", "owner": "<worker id>", "consumers": ["<worker id>"] }
+  ],
+  "workers": [
+    {
+      "id": "FE-Worker", "layer": "UI",
+      "task": "<one concrete task>",
+      "branchName": "feat/ui-<slug>",
+      "allowedFiles": ["<real relative paths this worker MAY edit>"],
+      "forbiddenFiles": ["<real paths it must NOT touch>"]
+    }
+  ]
+}
+
+Rules:
+- 2 to 4 workers, split by LAYER (UI / persistence / API / tests) — never two workers on the same layer.
+- allowedFiles/forbiddenFiles must be REAL paths from the tree. Two workers must NOT share an allowedFile.
+- Define interface contracts for anything that crosses a layer boundary (owner writes it, consumers only call it).
+- Keep it to this one slice; do not expand scope.`;
+
+  try {
+    const session = getProvider().startChat({ system, tools: PLAN_TOOLS });
+    let turn = await session.sendMessage(`Active slice: ${slice}\n\nFile tree:\n${tree.slice(0, 400).join('\n')}\n\nRead what you need, then output the L2 dispatch JSON.`);
+    for (let step = 0; step < 16; step++) {
+      if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+      const results = turn.toolCalls.map(call => {
+        if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
+        if (call.name === 'read_file') {
+          const rel = String((call.args as any)?.path || '');
+          filesRead.push(rel);
+          return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+        }
+        return { name: call.name, result: '[ERROR] unknown tool' };
+      });
+      turn = await session.sendToolResults(results);
+    }
+
+    let plan: any = null;
+    try { const m = turn.text.match(/\{[\s\S]*\}/); if (m) plan = JSON.parse(m[0]); } catch {}
+    if (!plan || !Array.isArray(plan.workers)) {
+      return res.json({ error: 'PM did not return a valid L2 plan', raw: turn.text?.slice(0, 500), filesRead: [...new Set(filesRead)] });
+    }
+
+    // DETERMINISTIC overlap gate — the conflict check that makes L2 safe (no model).
+    const owners: Record<string, string[]> = {};
+    for (const w of plan.workers) {
+      for (const f of (w.allowedFiles || [])) (owners[f] ||= []).push(w.id || '?');
+    }
+    const conflicts = Object.entries(owners)
+      .filter(([, ws]) => ws.length > 1)
+      .map(([file, ws]) => ({ file, workers: ws }));
+
+    res.json({
+      plan,
+      conflicts,
+      safe: conflicts.length === 0,
+      filesRead: [...new Set(filesRead)],
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- S7: multi-provider selection (runtime switch) ---
+app.get('/api/provider', (_req, res) => {
+  res.json({
+    active: getProviderOverride(),
+    current: getProvider().modelLabel,
+    available: availableProviders(),
+  });
+});
+
+app.post('/api/provider', (req, res) => {
+  const id = String(req.body?.provider || '') as ProviderId;
+  if (!['auto', 'claude', 'openai', 'gemini'].includes(id)) return res.status(400).json({ error: 'Invalid provider' });
+  if (id !== 'auto') {
+    const avail = availableProviders().find(p => p.id === id);
+    if (!avail?.ready) return res.status(400).json({ error: `No API key for ${id}` });
+  }
+  setProviderOverride(id);
+  res.json({ ok: true, active: id, current: getProvider().modelLabel });
 });
 
 app.listen(port, () => console.log(`Backend at ${port}`));

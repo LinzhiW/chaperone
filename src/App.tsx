@@ -1891,6 +1891,23 @@ const App: React.FC = () => {
   const [realFiles, setRealFiles] = useState<string[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // S7: provider selection state.
+  const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
+  const loadProvider = () => {
+    fetch('http://localhost:3005/api/provider').then(r => r.json())
+      .then(d => { if (d.available) setProviderInfo(d); }).catch(() => {});
+  };
+  const switchProvider = async (id: string) => {
+    try {
+      const res = await fetch('http://localhost:3005/api/provider', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: id }),
+      });
+      const d = await res.json();
+      if (d.ok) loadProvider();
+    } catch {}
+  };
+  useEffect(() => { if (showSettings) loadProvider(); }, [showSettings]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
@@ -2067,6 +2084,37 @@ const App: React.FC = () => {
         ? `\n\n_— PM dispatched ${data.auditors.length} auditor(s) · ${data.totalFilesRead?.length ?? 0} files read total_\n_${data.auditors.map((a: any) => `${a.id}: ${a.filesRead?.length ?? 0} file(s)`).join(' · ')}_`
         : '';
       setPmMessages(prev => [...prev, { role: 'model', content: (data.ceobrief || '[No briefing]') + auditorFooter }]);
+    } catch {
+      setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
+    } finally { setIsPmThinking(false); }
+  };
+
+  // S5: PM produces an L2 layered split for the active slice + a deterministic conflict check.
+  const planL2 = async () => {
+    if (isPmThinking) return;
+    const lastTyped = [...pmMessages].reverse().find(m => m.role === 'user' && m.content)?.content || '';
+    const slice = lastTyped || 'the current active slice';
+    const zh = /[一-鿿぀-ヿ가-힯]/.test(lastTyped);
+    setPmMessages(prev => [...prev, { role: 'user', content: zh ? `把这条 slice 拆成 L2 分层并行方案：${slice}` : `Plan L2 parallel work for: ${slice}` }]);
+    setIsPmThinking(true);
+    try {
+      const res = await fetch('http://localhost:3005/api/pm/l2-plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath, slice }),
+      });
+      const data = await res.json();
+      if (data.error) { setPmMessages(prev => [...prev, { role: 'model', content: `[ERROR] ${data.error}` }]); return; }
+      const p = data.plan;
+      const workers = (p.workers || []).map((w: any) =>
+        `**${w.id}** _(${w.layer})_ → \`${w.branchName}\`\n  ${w.task}\n  ${zh ? '可改' : 'owns'}: ${(w.allowedFiles || []).map((f: string) => `\`${f}\``).join(', ')}`
+      ).join('\n\n');
+      const contracts = (p.contracts || []).length > 0
+        ? `\n\n**${zh ? '接口合同' : 'Interface contracts'}:**\n` + p.contracts.map((c: any) => `- \`${c.name}\`: ${c.input} → ${c.output} (owner: ${c.owner})`).join('\n')
+        : '';
+      const conflictLine = data.safe
+        ? `\n\n✅ ${zh ? '无文件冲突 — 可安全并行 (L2)' : 'No file conflicts — safe to run in parallel (L2)'}`
+        : `\n\n⚠️ ${zh ? '检测到冲突' : 'CONFLICTS'}: ${data.conflicts.map((c: any) => `\`${c.file}\` (${c.workers.join(' vs ')})`).join(', ')} — ${zh ? 'PM 需重新分工' : 'PM must re-split'}`;
+      setPmMessages(prev => [...prev, { role: 'model', content: `**L2 ${zh ? '分层并行方案' : 'layered plan'}** — ${p.slice}\n\n${workers}${contracts}${conflictLine}\n\n_${zh ? 'PM 读了' : 'PM read'} ${data.filesRead?.length ?? 0} ${zh ? '个文件' : 'file(s)'}_` }]);
     } catch {
       setPmMessages(prev => [...prev, { role: 'model', content: '[Connection Error] Is the backend running?' }]);
     } finally { setIsPmThinking(false); }
@@ -2979,6 +3027,7 @@ const App: React.FC = () => {
                                 <button key={label} onClick={() => { if (!isPmThinking) sendPmMessage(msg); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>{label}</button>
                               ))}
                               <button onClick={() => { if (!isPmThinking) auditProject(); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>Plan agent dispatch</button>
+                              <button onClick={() => { if (!isPmThinking) planL2(); }} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 999, border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-2)', cursor: 'pointer' }}>Plan L2 parallel work</button>
                             </div>
                           </div>
                         )}
@@ -3492,6 +3541,27 @@ const App: React.FC = () => {
               placeholder="AIza…"
             />
             <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 5 }}>Saved locally to .env file.</div>
+
+            {/* S7: model provider selection (BYO-key; adapters already exist) */}
+            {providerInfo && (
+              <div style={{ marginTop: 22 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>MODEL ENGINE</label>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
+                    const active = providerInfo.active === p.id;
+                    return (
+                      <button key={p.id} disabled={!p.ready} onClick={() => switchProvider(p.id)}
+                        title={p.ready ? '' : 'No API key set'}
+                        style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, cursor: p.ready ? 'pointer' : 'not-allowed', opacity: p.ready ? 1 : 0.4, fontWeight: active ? 700 : 500, background: active ? 'var(--accent-pm)' : 'transparent', color: active ? '#fff' : 'var(--text-primary)', border: `1px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
+                        {p.id === 'auto' ? 'Auto' : p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Active: {providerInfo.current} · greyed = no key</div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
               <button onClick={saveSettings} style={{ flex: 1, background: 'var(--accent-pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>Save</button>
               <button onClick={() => setShowSettings(false)} style={{ padding: '12px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>Cancel</button>

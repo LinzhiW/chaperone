@@ -46,6 +46,10 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
   [ai_verified] ReviewerPanel: per-branch View diff + Accept & merge wired
 
 Golden path S1→S4 mechanism complete + AI-verified. Awaiting CEO click-test acceptance.
+
+[ai_verified] S5 L2 layered parallel + overlap gate   (post-MVP iteration; LIVE-verified)
+[ai_verified] S7 Multi-provider selection (runtime)   (post-MVP iteration; LIVE-verified)
+[pending]     S6 L3 worktree parallel · S8 skill loadout UX · S9 recruit · S10 PWA · S11 billing
 ```
 
 ## Workflow-routing fixes (this session)
@@ -167,3 +171,24 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
   Only the CEO click-test acceptance remains (Human Acceptance Gate — mine to build, yours to accept).
 - Files: server/src/index.ts, server/src/providers/openai.ts, server/dev.cjs, server/package.json,
   docs/PROGRESS.md, docs/ACCEPTANCE.md, .canopy/progress.json
+
+### 2026-07-06 (iterations) — by Claude Code (autonomous run: S5 + S7)
+- S5 L2 layered parallel plan + overlap gate:
+  - `POST /api/pm/l2-plan` — agentic: PM reads real files, splits ONE slice by LAYER
+    (UI/API/persistence), assigns per-worker allowedFiles/forbiddenFiles + interface
+    contracts. DETERMINISTIC overlap gate flags any two workers sharing a file (the
+    conflict check that makes L2 safe).
+  - Frontend: `planL2()` + "Plan L2 parallel work" preset (renders layered plan + contracts
+    + conflict verdict inline).
+  - LIVE-verified on agent-company (slice "add a project switcher"): PM produced a clean
+    3-worker UI/API/Persistence split with real file ownership + 2 contracts, no conflicts.
+    Overlap gate unit-tested: correctly caught a shared src/App.tsx between two workers.
+- S7 Multi-provider selection:
+  - `getProvider()` now honors a runtime override; `GET/POST /api/provider` +
+    `availableProviders()`. Settings modal gained an engine selector (greys engines with
+    no key). LIVE-verified: switch gpt-4o↔gemini-2.5-flash; claude (no key) rejected;
+    back to auto → gpt-4o. Per-*worker* routing left as future.
+- Frontend `vite build` clean (exit 0).
+- Status: S5 + S7 ai_verified. Post-MVP roadmap: 2 of the 7 iteration slices built.
+- Files: server/src/index.ts, server/src/providers/index.ts, src/App.tsx, docs/MVP.md,
+  docs/PROGRESS.md, .canopy/progress.json
