@@ -1,0 +1,50 @@
+{
+  "mvpGoal": "CEO briefs a goal → PM plans → Workers build on branches → CEO reviews & merges",
+  "gear": "L1",
+  "volatility": "High",
+  "slices": [
+    {
+      "id": "S1",
+      "name": "PM produces a real plan",
+      "kind": "golden",
+      "status": "accepted",
+      "subtasks": []
+    },
+    {
+      "id": "S1.5",
+      "name": "PM actions agentic + presets",
+      "kind": "golden",
+      "status": "accepted",
+      "subtasks": []
+    },
+    {
+      "id": "S2",
+      "name": "PM dispatches read-only L1 audits",
+      "kind": "golden",
+      "status": "ai_verified",
+      "subtasks": []
+    },
+    {
+      "id": "S3",
+      "name": "Worker edits a real file on a branch",
+      "kind": "golden",
+      "status": "in_progress",
+      "subtasks": [
+        { "id": "S3.1", "name": "git branch create/checkout", "status": "ai_verified" },
+        { "id": "S3.2", "name": "/api/diff — CEO sees branch change", "status": "ai_verified" },
+        { "id": "S3.3", "name": "worker model-driven write (live)", "status": "in_progress" }
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "Checkpoint + Reviewer + merge",
+      "kind": "golden",
+      "status": "in_progress",
+      "subtasks": [
+        { "id": "S4.1", "name": "/api/merge — accept → merge to base", "status": "ai_verified" },
+        { "id": "S4.2", "name": "reviewer annotations (live model)", "status": "in_progress" }
+      ]
+    }
+  ],
+  "updatedAt": "2026-07-06T00:00:00.000Z"
+}

@@ -35,8 +35,15 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
             (stage → golden path+deps → slice class → foundation+volatility → gear+reason
             → concrete allocation → recommendation+question). Verified on phrasewise.
   [done]    "Plan agent dispatch" chip (renamed from "Make a parallelization plan")
-[pending] S3   Worker edits a real file on a branch
-[pending] S4   Checkpoint + Reviewer + merge
+
+[in_progress] S3 Worker edits a real file on a branch  (plumbing ai_verified; model-half pending)
+  [ai_verified] git branch create/checkout (sandbox)
+  [ai_verified] /api/diff — CEO sees the real branch diff (base auto-detect main/master)
+  [pending]     worker model-driven write (live) — blocked by model-API outage at build time
+[in_progress] S4 Checkpoint + Reviewer + merge  (plumbing ai_verified; model-half pending)
+  [ai_verified] /api/merge — accept → --no-ff merge to base; clean abort on conflict (sandbox)
+  [ai_verified] ReviewerPanel: per-branch View diff + Accept & merge wired
+  [pending]     reviewer model-driven annotations (live) — blocked by model-API outage
 ```
 
 ## Workflow-routing fixes (this session)
@@ -112,3 +119,27 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 - CEO feedback: "可以这个位置不错，虽然信息不准（s1-4应该是vertical slices），但可以先这样"
   → label tweak noted (will say "vertical slices" not "steps"), position accepted.
 - Result: accepted → moving to S2.
+
+### 2026-07-06 — by Claude Code (autonomous run: S3 + S4 plumbing)
+- Slices: S3 (worker writes on a branch) + S4 (checkpoint + reviewer + merge)
+- Key finding: the worker-execution machinery already EXISTS and is wired —
+  `/api/execute-mission` (git branch + write_file + HITL approval) + frontend
+  `startWorker`/`approveAction`. So S3/S4 = verify + fill gaps, not build from zero.
+- Built (all model-independent, so verifiable now):
+  - `getBaseBranch()` — auto-detect main vs master (endpoints hardcoded `main`, broke on
+    `master` repos). Fixed `branch-status` + `reviewer` to use it.
+  - `GET /api/diff` — real git diff of a branch vs base (S3: CEO sees what the worker wrote).
+  - `POST /api/merge` — merge branch into base with `--no-ff`; aborts cleanly on conflict (S4).
+  - Frontend: `viewDiff` + branch-diff overlay (colorized), `acceptAndMerge`, per-branch
+    "View diff" / "✓ Accept & merge" in ReviewerPanel, `mergedBranches` tracking.
+- Verified in a throwaway git sandbox (NO model needed):
+  - worker path creates + checks out `feat/add-line` ✓
+  - `/api/diff` detects `master` base, returns the real unified diff ✓
+  - `/api/merge` produced a real `--no-ff` merge commit; `master` gained the change ✓
+  - frontend `vite build` clean (37 modules, exit 0) ✓
+- PENDING (blocked, not a code gap): the model-driven steps — worker actually generating
+  the write, reviewer generating annotations. Both OpenAI + Gemini API calls were timing
+  out from the Node backend at build time (curl reached the hosts; same backend succeeded
+  earlier in the day → transient network/provider issue). Will retry on a loop.
+- Status: S2 ai_verified; S3/S4 plumbing ai_verified (sandbox), model-half pending.
+- Files changed: server/src/index.ts, src/App.tsx, docs/ACCEPTANCE.md, .canopy/progress.json

@@ -39,6 +39,7 @@ interface Mission {
   startedAt?: string;
   reviewerLog?: string[];
   reviewerAnnotations?: ReviewAnnotation[];
+  mergedBranches?: string[];
 }
 
 interface Skill { id: number; name: string; source: string; category: string; description?: string; }
@@ -887,11 +888,14 @@ const ANNOTATION_CONFIG = {
   missing: { emoji: '❓', label: 'Missing', color: 'var(--review)', bg: 'var(--review-soft)',     border: 'var(--review)' },
 } as const;
 
-function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive }: {
+function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDiff, onAcceptMerge, mergeState }: {
   mission: Mission;
   workspacePath: string;
   onSendBack: () => void;
   onArchive: () => void;
+  onViewDiff: (branch: string) => void;
+  onAcceptMerge: (branch: string) => void;
+  mergeState: { branch: string; status: 'merging' | 'merged' | 'error'; message: string } | null;
 }) {
   const [activeFilter, setActiveFilter] = useState<'bug' | 'note' | 'bloat' | 'missing' | null>(null);
   const [activeBranchTab, setActiveBranchTab] = useState<string>('cross');
@@ -1096,6 +1100,26 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive }: {
             <span style={{ color: 'var(--ink-3)' }}>→</span>
             <span style={{ padding: '2px 7px', borderRadius: 99, background: 'var(--review-soft)', border: '1px solid var(--review)', color: 'var(--review)', fontSize: 10, fontWeight: 700, fontFamily: 'var(--mono)' }}>final ▶</span>
           </span>
+        </div>
+        {/* S3/S4: per-branch — see the real diff, then accept (merge into base). */}
+        <div style={{ padding: '10px 14px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {mission.assignments.map(a => {
+            const merged = (mission.mergedBranches || []).includes(a.branchName);
+            const isMerging = mergeState?.branch === a.branchName && mergeState.status === 'merging';
+            const mergeErr = mergeState?.branch === a.branchName && mergeState.status === 'error';
+            return (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="branch-chip">{a.branchName}</span>
+                <button onClick={() => onViewDiff(a.branchName)} style={{ fontSize: 11, padding: '4px 10px', background: 'var(--paper)', color: 'var(--ink-2)', border: '1px solid var(--rule)', borderRadius: 4, cursor: 'pointer' }}>View diff</button>
+                {merged ? (
+                  <span style={{ fontSize: 11, color: 'var(--approve)', fontWeight: 700 }}>✓ merged</span>
+                ) : (
+                  <button onClick={() => onAcceptMerge(a.branchName)} disabled={isMerging} style={{ fontSize: 11, padding: '4px 10px', background: 'var(--approve)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: isMerging ? 'wait' : 'pointer', opacity: isMerging ? 0.7 : 1 }}>{isMerging ? 'Merging…' : '✓ Accept & merge'}</button>
+                )}
+                {mergeErr && <span style={{ fontSize: 11, color: '#c0392b' }}>{mergeState!.message}</span>}
+              </div>
+            );
+          })}
         </div>
         <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button onClick={onSendBack} style={{ fontSize: 12, padding: '7px 14px', background: 'var(--paper)', color: 'var(--ink)', border: '1.5px solid var(--rule)', borderRadius: 4, cursor: 'pointer' }}>
@@ -1827,6 +1851,9 @@ const App: React.FC = () => {
   // New-conversation / clear-chat flow (safe: checkpoints to docs first).
   const [showClearPanel, setShowClearPanel] = useState(false);
   const [isCheckpointing, setIsCheckpointing] = useState(false);
+  // S3 diff viewer + S4 merge state.
+  const [branchDiff, setBranchDiff] = useState<{ branch: string; loading: boolean; diff: string; files: { file: string; insertions: number; deletions: number }[]; base: string } | null>(null);
+  const [mergeState, setMergeState] = useState<{ branch: string; status: 'merging' | 'merged' | 'error'; message: string } | null>(null);
   // Which docs the user chose to draft (set when entering 'docs' phase)
   const [docsChoice, setDocsChoice] = useState<'all' | 'prd' | 'skip'>('all');
   // Current doc step in HITL flow: 0=PRD 1=SOP 2=DevLog
@@ -2248,6 +2275,41 @@ const App: React.FC = () => {
       }
     };
     es.onerror = () => es.close();
+  };
+
+  // S3: fetch and show exactly what a worker wrote on its branch (real git diff).
+  const viewDiff = async (branch: string) => {
+    setBranchDiff({ branch, loading: true, diff: '', files: [], base: '' });
+    try {
+      const res = await fetch(`http://localhost:3005/api/diff?workspacePath=${encodeURIComponent(config.projectPath)}&branch=${encodeURIComponent(branch)}`);
+      const data = await res.json();
+      if (data.error) { setBranchDiff({ branch, loading: false, diff: `[ERROR] ${data.error}`, files: [], base: '' }); return; }
+      setBranchDiff({ branch, loading: false, diff: data.diff || '', files: data.files || [], base: data.base || '' });
+    } catch {
+      setBranchDiff({ branch, loading: false, diff: '[Connection Error] Is the backend running?', files: [], base: '' });
+    }
+  };
+
+  // S4: CEO accepts a branch → merge it into the base locally.
+  const acceptAndMerge = async (missionId: string, branch: string) => {
+    setMergeState({ branch, status: 'merging', message: '' });
+    try {
+      const res = await fetch('http://localhost:3005/api/merge', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: config.projectPath, branch }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setMergeState({ branch, status: 'merged', message: `Merged into ${data.base}` });
+        setMissions(prev => prev.map(m => m.id !== missionId ? m : {
+          ...m, mergedBranches: [...(m.mergedBranches || []), branch],
+        }));
+      } else {
+        setMergeState({ branch, status: 'error', message: data.error || 'Merge failed' });
+      }
+    } catch {
+      setMergeState({ branch, status: 'error', message: '[Connection Error] Is the backend running?' });
+    }
   };
 
   const archiveMission = (missionId: string) => {
@@ -3244,6 +3306,9 @@ const App: React.FC = () => {
                 workspacePath={config.projectPath}
                 onSendBack={() => setMissions(prev => prev.map(m => m.id !== activeMission.id ? m : { ...m, status: 'running' as const }))}
                 onArchive={() => archiveMission(activeMission.id)}
+                onViewDiff={viewDiff}
+                onAcceptMerge={(branch) => acceptAndMerge(activeMission.id, branch)}
+                mergeState={mergeState}
               />
             ) : (
               /* 3.2 / 3.9 / 3.12 — Worker tile grid */
@@ -3345,6 +3410,35 @@ const App: React.FC = () => {
         onClose={() => setRecruitOpen(false)}
         onHired={(w) => { setTeam(t => [...t, w]); setRecruitOpen(false); }}
       />
+
+      {/* ── Branch Diff overlay (S3: CEO sees exactly what a worker wrote) ── */}
+      {branchDiff && (
+        <div onClick={() => setBranchDiff(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(31,29,26,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} className="box" style={{ background: 'var(--paper)', width: 'min(860px, 92vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="branch-chip">{branchDiff.branch}</span>
+              {branchDiff.base && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>vs {branchDiff.base}</span>}
+              {branchDiff.files.length > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                  {branchDiff.files.length} file{branchDiff.files.length > 1 ? 's' : ''} · +{branchDiff.files.reduce((n, f) => n + f.insertions, 0)} −{branchDiff.files.reduce((n, f) => n + f.deletions, 0)}
+                </span>
+              )}
+              <button onClick={() => setBranchDiff(null)} style={{ marginLeft: 'auto', fontSize: 13, padding: '3px 9px', borderRadius: 4, background: 'transparent', border: '1px solid var(--rule)', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ overflow: 'auto', padding: 0, background: 'var(--paper-2)' }}>
+              {branchDiff.loading ? (
+                <div style={{ padding: 20, fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>Loading diff…</div>
+              ) : (
+                <pre style={{ margin: 0, padding: '12px 16px', fontSize: 12, fontFamily: 'var(--mono)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {branchDiff.diff.split('\n').map((ln, i) => (
+                    <div key={i} style={{ color: ln.startsWith('+') && !ln.startsWith('+++') ? 'var(--approve)' : ln.startsWith('-') && !ln.startsWith('---') ? '#c0392b' : ln.startsWith('@@') ? 'var(--pm)' : 'var(--ink-2)' }}>{ln || ' '}</div>
+                  ))}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Add Skill Modal ── */}
       {showAddSkill && (

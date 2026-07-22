@@ -468,12 +468,13 @@ app.get('/api/branch-status', async (req, res) => {
   try {
     const git = simpleGit(workspacePath);
     if (!(await git.checkIsRepo())) return res.json({ branches: {} });
+    const base = await getBaseBranch(git);
 
     for (const branch of branchList) {
       try {
-        // Commits on this branch not on main
-        const log = await git.log({ from: 'main', to: branch });
-        const diff = await git.diffSummary([`main...${branch}`]);
+        // Commits on this branch not on the base
+        const log = await git.log({ from: base, to: branch });
+        const diff = await git.diffSummary([`${base}...${branch}`]);
         results[branch] = {
           commits: log.total,
           files: diff.files.length,
@@ -484,6 +485,62 @@ app.get('/api/branch-status', async (req, res) => {
       }
     }
     res.json({ branches: results });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pick the integration base branch: prefer main, then master, else first local branch.
+// (branch-status/reviewer used to hardcode 'main', which broke on 'master' repos.)
+async function getBaseBranch(git: ReturnType<typeof simpleGit>): Promise<string> {
+  const b = await git.branchLocal();
+  if (b.all.includes('main')) return 'main';
+  if (b.all.includes('master')) return 'master';
+  return b.all[0] || 'main';
+}
+
+// --- Branch diff (S3: CEO sees exactly what the worker wrote on the branch) ---
+app.get('/api/diff', async (req, res) => {
+  let { workspacePath, branch } = req.query as any;
+  if (!workspacePath || !branch) return res.status(400).json({ error: 'Missing workspacePath or branch' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return res.json({ diff: '', base: '', branch, files: [] });
+    const base = await getBaseBranch(git);
+    // Worktree changes on the branch that aren't committed yet still matter for review,
+    // so diff base...branch (committed) — the worker commits, or we show uncommitted too.
+    let diff = '';
+    let files: { file: string; insertions: number; deletions: number }[] = [];
+    try {
+      diff = await git.diff([`${base}...${branch}`]);
+      const sum = await git.diffSummary([`${base}...${branch}`]);
+      files = sum.files.map((f: any) => ({ file: f.file, insertions: f.insertions ?? 0, deletions: f.deletions ?? 0 }));
+    } catch {}
+    res.json({ base, branch, diff: diff || '(no committed changes vs ' + base + ')', files });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Merge (S4: CEO accepts → merge the branch into the base locally) ---
+app.post('/api/merge', async (req, res) => {
+  let { workspacePath, branch } = req.body || {};
+  if (!workspacePath || !branch) return res.status(400).json({ error: 'Missing workspacePath or branch' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return res.status(400).json({ error: 'Not a git repository' });
+    const base = await getBaseBranch(git);
+    await git.checkout(base);
+    try {
+      const summary = await git.merge([branch, '--no-ff', '-m', `Merge ${branch} into ${base} (accepted by CEO)`]);
+      res.json({ ok: true, base, merged: branch, sha: (summary as any)?.result || '' });
+    } catch (mergeErr: any) {
+      // Conflict or failure — abort so the repo is left clean, report back.
+      try { await git.merge(['--abort']); } catch {}
+      res.status(409).json({ error: `Merge failed (likely a conflict): ${mergeErr.message}`, base, branch });
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -595,11 +652,12 @@ app.get('/api/reviewer', async (req, res) => {
       send('log', { log: '[ERROR] Workspace is not a git repository.' });
       return res.end();
     }
+    const base = await getBaseBranch(git);
     for (const branch of branchList) {
       try {
         send('log', { log: `[REVIEWER] Reading diff for ${branch}…` });
-        const diff = await git.diff([`main...${branch}`]);
-        diffs[branch] = diff?.trim() || '(no changes vs main)';
+        const diff = await git.diff([`${base}...${branch}`]);
+        diffs[branch] = diff?.trim() || `(no changes vs ${base})`;
       } catch (e: any) {
         diffs[branch] = `(diff unavailable: ${e.message})`;
         send('log', { log: `[REVIEWER] Warning: ${branch} diff failed` });
