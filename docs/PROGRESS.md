@@ -49,7 +49,10 @@ Golden path S1→S4 mechanism complete + AI-verified. Awaiting CEO click-test ac
 
 [ai_verified] S5 L2 layered parallel + overlap gate   (post-MVP iteration; LIVE-verified)
 [ai_verified] S7 Multi-provider selection (runtime)   (post-MVP iteration; LIVE-verified)
-[pending]     S6 L3 worktree parallel · S8 skill loadout UX · S9 recruit · S10 PWA · S11 billing
+[backend]     S6 worktree primitive (auto-dispatch CEO-gated) · S8 skill loadout · S9 recruit
+              — backends built/verified, only UIs (S8/S9) or CEO confirm (S6) remain
+[pending]     S10 PWA (frontend-only) · S11 billing (CEO decision)
+   → see "Backend Readiness" section below
 ```
 
 ## Workflow-routing fixes (this session)
