@@ -192,3 +192,24 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 - Status: S5 + S7 ai_verified. Post-MVP roadmap: 2 of the 7 iteration slices built.
 - Files: server/src/index.ts, server/src/providers/index.ts, src/App.tsx, docs/MVP.md,
   docs/PROGRESS.md, .canopy/progress.json
+
+## Backend Readiness (post-MVP iterations) — as of 2026-07-06
+```
+S6 L3 worktree     🟡 primitive built + verified: POST/GET /api/worktree, /api/worktree/remove
+                      (create→list→on-disk→remove). AUTO-DISPATCH into worktrees still needs
+                      CEO explicit confirm (L2→L3 gate) — not built.
+S8 Skill loadout   🟢 backend READY + verified: /api/skills (47), saved-sets CRUD, and
+                      execute-mission already injects skill content by name. Only equip UX left.
+S9 Recruit         🟢 backend READY + verified: /api/team CRUD, 6 role-presets, RecruitModal
+                      exists. Only recruit→dispatch wiring (UI) left.
+S10 PWA            ⚪ no backend (manifest + service worker are frontend build config).
+S11 Billing        🔴 CEO decision (pricing + payment provider). Not started.
+```
+
+### 2026-07-06 (backend prep) — by Claude Code
+- Built S6 worktree primitive (`/api/worktree` create/list/remove) — the L3 mechanism.
+  Verified end-to-end in the sandbox (create new-branch worktree → list → dir on disk →
+  remove → gone). Auto-parallel-dispatch left for CEO confirm.
+- Verified existing S8/S9 backends are ready (skills 47, saved-sets, team CRUD, 6 role
+  presets, skill injection in execute-mission). Documented that only their UIs remain.
+- Files: server/src/index.ts, docs/MVP.md, docs/PROGRESS.md, .canopy/progress.json

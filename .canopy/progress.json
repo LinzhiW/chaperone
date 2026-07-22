@@ -64,7 +64,37 @@
         { "id": "S7.1", "name": "GET/POST /api/provider runtime override + availability", "status": "ai_verified" },
         { "id": "S7.2", "name": "Settings engine selector (greys unavailable)", "status": "ai_verified" }
       ]
+    },
+    {
+      "id": "S6",
+      "name": "L3 worktree primitive (auto-dispatch still CEO-gated)",
+      "kind": "support",
+      "status": "in_progress",
+      "subtasks": [
+        { "id": "S6.1", "name": "POST/GET /api/worktree + remove — create/list/remove (verified)", "status": "ai_verified" },
+        { "id": "S6.2", "name": "auto-dispatch parallel slices into worktrees", "status": "blocked" }
+      ]
+    },
+    {
+      "id": "S8",
+      "name": "Skill loadout — backend ready, equip UX pending",
+      "kind": "support",
+      "status": "in_progress",
+      "subtasks": [
+        { "id": "S8.1", "name": "backend: /api/skills + saved-sets + execute-mission injection (verified)", "status": "ai_verified" },
+        { "id": "S8.2", "name": "equip UX (frontend)", "status": "pending" }
+      ]
+    },
+    {
+      "id": "S9",
+      "name": "Recruit — backend ready, dispatch wiring pending",
+      "kind": "support",
+      "status": "in_progress",
+      "subtasks": [
+        { "id": "S9.1", "name": "backend: /api/team CRUD + role-presets (verified)", "status": "ai_verified" },
+        { "id": "S9.2", "name": "recruit → dispatch wiring (frontend)", "status": "pending" }
+      ]
     }
   ],
-  "updatedAt": "2026-07-06T02:15:00.000Z"
+  "updatedAt": "2026-07-06T03:00:00.000Z"
 }

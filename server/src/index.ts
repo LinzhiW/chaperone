@@ -1413,4 +1413,72 @@ app.post('/api/provider', (req, res) => {
   res.json({ ok: true, active: id, current: getProvider().modelLabel });
 });
 
+// --- S6 groundwork: git worktree primitive (the L3 mechanism) ---
+// Creates/lists/removes worktrees so independent slices can run in isolated checkouts.
+// This is ONLY the mechanical primitive — auto-dispatching parallel slices into worktrees
+// (true L3) still requires explicit CEO confirmation per the operating model. Verifiable
+// deterministically (no model).
+const worktreePath = (workspacePath: string, branch: string) => {
+  const safe = branch.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return path.join(path.dirname(workspacePath), `${path.basename(workspacePath)}--wt--${safe}`);
+};
+
+app.post('/api/worktree', async (req, res) => {
+  let { workspacePath, branch } = req.body || {};
+  if (!workspacePath || !branch) return res.status(400).json({ error: 'Missing workspacePath or branch' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return res.status(400).json({ error: 'Not a git repository' });
+    const wt = worktreePath(workspacePath, branch);
+    if (fs.existsSync(wt)) return res.status(409).json({ error: 'Worktree already exists', path: wt });
+    const branches = await git.branchLocal();
+    if (branches.all.includes(branch)) {
+      await git.raw(['worktree', 'add', wt, branch]);
+    } else {
+      const base = await getBaseBranch(git);
+      await git.raw(['worktree', 'add', '-b', branch, wt, base]);
+    }
+    res.json({ ok: true, path: wt, branch });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/worktree', async (req, res) => {
+  let ws = getWorkspacePath(req);
+  if (!ws) return res.status(400).json({ error: 'Missing workspacePath' });
+  if (ws.startsWith('~')) ws = path.join(os.homedir(), ws.slice(1));
+  try {
+    const git = simpleGit(ws);
+    if (!(await git.checkIsRepo())) return res.json({ worktrees: [] });
+    const raw = await git.raw(['worktree', 'list', '--porcelain']);
+    const worktrees: { path: string; branch: string }[] = [];
+    let cur: any = {};
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('worktree ')) cur = { path: line.slice(9) };
+      else if (line.startsWith('branch ')) cur.branch = line.slice(7).replace('refs/heads/', '');
+      else if (line.trim() === '') { if (cur.path) worktrees.push(cur); cur = {}; }
+    }
+    if (cur.path) worktrees.push(cur);
+    res.json({ worktrees });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/worktree/remove', async (req, res) => {
+  let { workspacePath, branch } = req.body || {};
+  if (!workspacePath || !branch) return res.status(400).json({ error: 'Missing workspacePath or branch' });
+  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
+  try {
+    const git = simpleGit(workspacePath);
+    const wt = worktreePath(workspacePath, branch);
+    await git.raw(['worktree', 'remove', wt, '--force']);
+    res.json({ ok: true, removed: wt });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(port, () => console.log(`Backend at ${port}`));
