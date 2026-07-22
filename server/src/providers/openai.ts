@@ -83,7 +83,8 @@ export class OpenAIProvider implements ModelProvider {
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new OpenAI({ apiKey });
+    // Longer timeout + retries: connections can be slow/flaky through a local proxy.
+    this.client = new OpenAI({ apiKey, timeout: 120000, maxRetries: 4 });
     this.model = model;
     this.modelLabel = model;
   }

@@ -36,14 +36,16 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
             → concrete allocation → recommendation+question). Verified on phrasewise.
   [done]    "Plan agent dispatch" chip (renamed from "Make a parallelization plan")
 
-[in_progress] S3 Worker edits a real file on a branch  (plumbing ai_verified; model-half pending)
-  [ai_verified] git branch create/checkout (sandbox)
-  [ai_verified] /api/diff — CEO sees the real branch diff (base auto-detect main/master)
-  [pending]     worker model-driven write (live) — blocked by model-API outage at build time
-[in_progress] S4 Checkpoint + Reviewer + merge  (plumbing ai_verified; model-half pending)
-  [ai_verified] /api/merge — accept → --no-ff merge to base; clean abort on conflict (sandbox)
+[ai_verified] S3 Worker edits a real file on a branch  ✓ LIVE end-to-end
+  [ai_verified] worker creates/checks out git branch
+  [ai_verified] worker write_file — HITL-gated (nothing written until CEO approves) + auto-commit
+  [ai_verified] /api/diff — CEO sees the real committed diff (base auto-detect main/master)
+[ai_verified] S4 Checkpoint + Reviewer + merge  ✓ LIVE end-to-end
+  [ai_verified] reviewer reads real diff, returns annotations (caught a planted bug)
+  [ai_verified] /api/merge — accept → --no-ff merge to base; clean conflict abort
   [ai_verified] ReviewerPanel: per-branch View diff + Accept & merge wired
-  [pending]     reviewer model-driven annotations (live) — blocked by model-API outage
+
+Golden path S1→S4 mechanism complete + AI-verified. Awaiting CEO click-test acceptance.
 ```
 
 ## Workflow-routing fixes (this session)
@@ -143,3 +145,25 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
   earlier in the day → transient network/provider issue). Will retry on a loop.
 - Status: S2 ai_verified; S3/S4 plumbing ai_verified (sandbox), model-half pending.
 - Files changed: server/src/index.ts, src/App.tsx, docs/ACCEPTANCE.md, .canopy/progress.json
+
+### 2026-07-06 (later) — by Claude Code (autonomous run: S3+S4 LIVE verified + proxy fix)
+- ROOT CAUSE of the model-API outage: this machine reaches OpenAI/Google/Anthropic ONLY
+  through a local proxy (127.0.0.1:7892, WinINET ProxyEnable=1). curl respects HTTPS_PROXY;
+  **Node's fetch/undici does NOT by default**, so the backend went direct → blocked → timeout.
+- FIX (permanent): `server/dev.cjs` launcher sets `NODE_USE_ENV_PROXY=1` before Node starts,
+  so undici honors HTTPS_PROXY. `npm run dev` now uses it (old script kept as `dev:direct`).
+  Harmless when no proxy is set. Also bumped OpenAI adapter to timeout 120s + maxRetries 4
+  (proxy connections are slow/flaky).
+- execute-mission now AUTO-COMMITS the worker's changes to its branch after a successful run,
+  so the write becomes a real diff the CEO can review (/api/diff) and merge (/api/merge).
+- LIVE end-to-end verification (sandbox git repo, gpt-4o through the proxy):
+  - S3: worker created feat/add-line → read hello.txt → wrote "line three" (each HITL-approved)
+    → auto-committed "worker(FE-Worker): …". master stayed clean. /api/diff showed the real
+    committed diff (+line three). ✓
+  - S4: /api/merge merged feat/add-line into master (--no-ff, "…accepted by CEO"); master
+    gained the line. Reviewer read a branch with a planted bug and returned the correct
+    annotation (type:bug, calc.py:2, "subtraction instead of addition"). ✓
+- Status: S2 ai_verified; S3 + S4 ai_verified (LIVE). Golden path S1→S4 mechanism complete.
+  Only the CEO click-test acceptance remains (Human Acceptance Gate — mine to build, yours to accept).
+- Files: server/src/index.ts, server/src/providers/openai.ts, server/dev.cjs, server/package.json,
+  docs/PROGRESS.md, docs/ACCEPTANCE.md, .canopy/progress.json

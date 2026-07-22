@@ -28,23 +28,23 @@
       "id": "S3",
       "name": "Worker edits a real file on a branch",
       "kind": "golden",
-      "status": "in_progress",
+      "status": "ai_verified",
       "subtasks": [
         { "id": "S3.1", "name": "git branch create/checkout", "status": "ai_verified" },
-        { "id": "S3.2", "name": "/api/diff — CEO sees branch change", "status": "ai_verified" },
-        { "id": "S3.3", "name": "worker model-driven write (live)", "status": "in_progress" }
+        { "id": "S3.2", "name": "worker write_file (HITL-gated) + auto-commit to branch", "status": "ai_verified" },
+        { "id": "S3.3", "name": "/api/diff — CEO sees the real committed diff", "status": "ai_verified" }
       ]
     },
     {
       "id": "S4",
       "name": "Checkpoint + Reviewer + merge",
       "kind": "golden",
-      "status": "in_progress",
+      "status": "ai_verified",
       "subtasks": [
-        { "id": "S4.1", "name": "/api/merge — accept → merge to base", "status": "ai_verified" },
-        { "id": "S4.2", "name": "reviewer annotations (live model)", "status": "in_progress" }
+        { "id": "S4.1", "name": "reviewer reads real diff + returns annotations (found planted bug)", "status": "ai_verified" },
+        { "id": "S4.2", "name": "/api/merge — accept → --no-ff merge to base; clean conflict abort", "status": "ai_verified" }
       ]
     }
   ],
-  "updatedAt": "2026-07-06T00:00:00.000Z"
+  "updatedAt": "2026-07-06T01:30:00.000Z"
 }

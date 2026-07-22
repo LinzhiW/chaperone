@@ -317,6 +317,25 @@ app.get('/api/execute-mission', async (req, res) => {
         break;
       }
     }
+    // Commit the worker's changes to its branch so they become a real diff the CEO can
+    // review (/api/diff) and merge (/api/merge) — both operate on committed history.
+    if (branchName && workspacePath) {
+      try {
+        const git = simpleGit(workspacePath);
+        if (await git.checkIsRepo()) {
+          const status = await git.status();
+          if (status.files.length > 0) {
+            await git.add('.');
+            await git.commit(`worker(${agent}): ${taskName}`.slice(0, 200));
+            sendEvent('log', { log: `> [GIT] Committed ${status.files.length} file(s) to ${branchName}` });
+          } else {
+            sendEvent('log', { log: `> [GIT] No file changes to commit.` });
+          }
+        }
+      } catch (err: any) {
+        sendEvent('log', { log: `> [GIT] Commit skipped: ${err.message}` });
+      }
+    }
     activePanels.delete(taskId);
     res.end();
   } catch (err: any) {
