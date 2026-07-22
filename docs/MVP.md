@@ -28,9 +28,26 @@ parallel-safe early (see `PM_OPERATING_MODEL.md` §4).
 | S3 Worker edits a real file on a branch | approve a task | a Worker actually changes a real file on its own branch | pending |
 | S4 Checkpoint + Reviewer + merge | review & accept | diff + plain-language review → CEO accepts → merge | pending |
 
-## Not in MVP (later iterations)
-Skill-loadout full UX, multi-provider selection UI, recruit flow, L3 multi-worktree
-parallel, PWA packaging, billing.
+## Iterations / Advanced Slices (post-MVP)
+
+These are **not** MVP-required — the MVP Completion Gate stays at S1–S4. They are the
+planned roadmap after the core loop is accepted, ordered by value + dependency. Numbers
+continue the sequence; each is a real vertical slice (UI + backend + acceptance), not a
+vague theme. Gear rises only as the foundation stabilizes (see `PM_OPERATING_MODEL.md` §4).
+
+| Slice | CEO action | Delivers | Depends on / gear | Already in repo |
+|-------|-----------|----------|-------------------|-----------------|
+| **S5 L2 layered parallel** | approve a plan that splits one slice by layer | PM runs **multiple Workers on ONE active slice** (UI / persistence / tests), with PM-locked interface contracts + file ownership; no cross-worker conflicts | S1–S4 accepted; foundation stable enough to write contracts → **L2** | execute-mission runs 1 worker; two-phase dispatch spec exists |
+| **S6 L3 multi-worktree parallel** | approve multi-slice parallel | Independent slices run in **separate git worktrees/branches** at once; PM integrates + runs full verification | S5 proven; last 2–3 accepted slices didn't touch Foundation Files → **L3**; CEO explicit confirm | — |
+| **S7 Multi-provider selection** | pick the engine per PM/Worker | CEO switches **Claude / GPT / Gemini** (and sees cost/speed tradeoffs); BYO-key | provider adapters already exist | `server/src/providers/*` (Claude/OpenAI/Gemini) done; needs UI + per-agent routing |
+| **S8 Skill loadout UX** | equip an agent with skills | Game-inventory-style **skill loadouts** attached to Workers, injected into their system prompt | S7 or standalone | `getSkillsDir`/`listSkills`, role-presets, saved-sets exist; needs the full equip UX |
+| **S9 Recruit flow** | create a named Worker | Configure **named Workers** (role, dept, branch prefix, default loadout) that persist to the team | S8 (loadouts) | `RecruitModal` + `/api/team` persistence exist; needs to connect to real dispatch |
+| **S10 PWA packaging** | install to device | Installable **PWA** for real-device testing + product feel | golden path stable | — |
+| **S11 Billing / subscription** | subscribe | Flat **subscription on the orchestration layer** (BYO-key, no token metering — see `DECISIONS.md`) | product-ready | — |
+
+Sequencing note: **S5 (L2 parallel) is the highest-value next step** — it's the first time
+Canopy does what a single agent can't, and it's the core differentiator. S7–S9 lean on code
+that already half-exists, so they're cheaper than they look.
 
 ## Foundation Files (Canopy's own — see PROGRESS.md for the live manifest)
 `src/App.tsx`, `server/src/index.ts`, `server/src/persistence.ts`,
