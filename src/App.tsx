@@ -167,64 +167,59 @@ function HitlCard({ tool = 'run_shell', cmd = '', compact = false, onApprove, on
    - One circle per mission. Active mission = square corners + left bar.
    - Dashed green ＋ at bottom for "new mission".
    - ⚙ at the very bottom.                                                     */
-function MissionRail({ projectName, onProjectClick, onNewProject, onSettings }: {
-  projectName: string;
-  onProjectClick: () => void;
+const projectLabel = (p: string) => {
+  const name = p.split(/[\\/]/).filter(Boolean).pop() || 'AC';
+  return (name.match(/[a-zA-Z0-9]/g) || ['A', 'C']).slice(0, 2).join('').toUpperCase();
+};
+
+function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSettings, onRemoveProject }: {
+  projects: string[];
+  activePath: string;
+  onSelectProject: (p: string) => void;
   onNewProject: () => void;
   onSettings: () => void;
+  onRemoveProject: (p: string) => void;
 }) {
-  // M0: single project. Rail shows one circle for the current project.
-  // Missions within the project live in the sidebar, not here.
-  // Future: multi-project = one circle per project (per chat3.md decision).
-  const label = (projectName.match(/[a-zA-Z]/g) || ['A', 'C']).slice(0, 2).join('').toUpperCase();
+  // Multi-project: one circle per opened project; click to switch. Each project keeps
+  // its own chat + missions (swapped in App on switch).
   return (
     <div style={{
-      width: 60,
-      background: '#1a1816',
-      borderRight: '1.5px solid var(--rule)',
-      padding: '10px 0',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: 8,
-      flex: '0 0 auto',
+      width: 60, background: '#1a1816', borderRight: '1.5px solid var(--rule)',
+      padding: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      gap: 8, flex: '0 0 auto', overflowY: 'auto',
     }}>
-      <div title={`${projectName} (current project)`} style={{ position: 'relative', width: 44, height: 44 }} onClick={onProjectClick}>
-        <div style={{
-          position: 'absolute', left: -10, top: 6, bottom: 6, width: 3,
-          background: 'var(--paper)', borderRadius: '0 3px 3px 0',
-        }} />
-        <div style={{
-          width: 44, height: 44,
-          borderRadius: 12,
-          background: '#5a6cff',
-          color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 700, fontSize: 13,
-          border: '2px solid var(--paper)',
-          cursor: 'pointer',
-        }}>{label}</div>
-      </div>
+      {projects.map(p => {
+        const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
+        const active = p === activePath;
+        return (
+          <div key={p} title={`${name}${active ? ' (current)' : ' — click to switch'}\n${p}`}
+            style={{ position: 'relative', width: 44, height: 44, flexShrink: 0 }}
+            onClick={() => onSelectProject(p)}
+            onContextMenu={(e) => { e.preventDefault(); if (projects.length > 1 && window.confirm(`Close "${name}" from the rail? (does not delete files)`)) onRemoveProject(p); }}
+          >
+            {active && <div style={{ position: 'absolute', left: -10, top: 6, bottom: 6, width: 3, background: 'var(--paper)', borderRadius: '0 3px 3px 0' }} />}
+            <div style={{
+              width: 44, height: 44, borderRadius: active ? 12 : 22,
+              background: active ? '#5a6cff' : '#3a3a3a', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, fontSize: 13, border: `2px solid ${active ? 'var(--paper)' : 'transparent'}`,
+              cursor: 'pointer', transition: 'border-radius 0.15s',
+            }}>{projectLabel(p)}</div>
+          </div>
+        );
+      })}
       <div
         onClick={onNewProject}
-        title="Open / switch project"
+        title="Open / add another project"
         style={{
-          width: 44, height: 44, borderRadius: 22,
-          border: '1.5px dashed #6e8b54',
-          color: '#6e8b54',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 300, cursor: 'pointer',
+          width: 44, height: 44, borderRadius: 22, border: '1.5px dashed #6e8b54',
+          color: '#6e8b54', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 22, fontWeight: 300, cursor: 'pointer', flexShrink: 0,
         }}
       >＋</div>
       <div style={{ flex: 1 }} />
-      <div
-        onClick={onSettings}
-        title="Settings"
-        style={{
-          width: 36, height: 36, borderRadius: '50%',
-          color: '#6e6a60', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16, cursor: 'pointer',
-        }}
+      <div onClick={onSettings} title="Settings"
+        style={{ width: 36, height: 36, borderRadius: '50%', color: '#6e6a60', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer', flexShrink: 0 }}
       >⚙</div>
     </div>
   );
@@ -1816,11 +1811,20 @@ function ProgressBoard({ workspacePath }: { workspacePath: string }) {
 
 const App: React.FC = () => {
   // Persisted
-  const [config, setConfig] = useLocalStorage('ac_config', {
-    googleKey: '', projectPath: '', defaultModel: 'gemini-2.5-flash',
+  const [config, setConfig] = useLocalStorage<{ googleKey: string; projectPath: string; defaultModel: string; projects?: string[] }>('ac_config', {
+    googleKey: '', projectPath: '', defaultModel: 'gemini-2.5-flash', projects: [],
   });
   const [skills, setSkills] = useState<Skill[]>([]);
   const [missions, setMissions] = useLocalStorage<Mission[]>('ac_missions', []);
+  // Per-project chat + missions. The active project's live in pmMessages/missions above;
+  // inactive projects are parked here and swapped in on switch (the hook can't re-key).
+  const [projectData, setProjectData] = useLocalStorage<Record<string, { messages: Message[]; missions: Mission[] }>>('ac_project_data', {});
+  // Keep the active project present in the rail list (covers onboarding + legacy configs).
+  useEffect(() => {
+    if (config.projectPath && !(config.projects || []).includes(config.projectPath)) {
+      setConfig(prev => ({ ...prev, projects: [...(prev.projects || []), prev.projectPath] }));
+    }
+  }, [config.projectPath]);
 
   // Session state
   const [pmMessages, setPmMessages] = useLocalStorage<Message[]>('ac_pm_messages', [{
@@ -2004,7 +2008,51 @@ const App: React.FC = () => {
 
   const openWorkspace = () => {
     const path = prompt('Enter project workspace path:', config.projectPath);
-    if (path !== null) setConfig({ ...config, projectPath: path });
+    if (path !== null && path.trim()) switchProject(path.trim());
+  };
+
+  // ── Multi-project rail ──────────────────────────────────────────────────────
+  const PM_FRESH_WELCOME: Message = { role: 'model', content: "Welcome. I'm your PM — I plan, never execute. Want me to go over this project, or jump to a goal?" };
+
+  // Switch to (or add) a project. The active project's chat+missions are parked in
+  // projectData; the target's are loaded (or defaults). Projects coexist in the rail.
+  const switchProject = (target: string) => {
+    if (!target) return;
+    if (target === config.projectPath) { setActiveView('pm'); return; }
+    if (config.projectPath) {
+      setProjectData(prev => ({ ...prev, [config.projectPath]: { messages: pmMessages, missions } }));
+    }
+    const d = projectData[target];
+    setPmMessages(d?.messages?.length ? d.messages : [PM_FRESH_WELCOME]);
+    setMissions(d?.missions || []);
+    setConfig(prev => ({
+      ...prev,
+      projectPath: target,
+      projects: (prev.projects || []).includes(target) ? prev.projects : [...(prev.projects || []), target],
+    }));
+    setActiveView('pm'); setActivePmTab('chat'); setPmScreen('idle'); setPendingAssignments([]);
+    startedWorkersRef.current.clear();
+    fetch('http://localhost:3005/api/init-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: target }) }).catch(() => {});
+  };
+
+  const addProject = () => {
+    const p = window.prompt('Open / add a project folder (full path):', 'C:\\Users\\linzh\\Desktop\\IDE\\');
+    if (p && p.trim()) switchProject(p.trim());
+  };
+
+  const removeProject = (target: string) => {
+    const remaining = (config.projects || []).filter(x => x !== target);
+    setProjectData(prev => { const n = { ...prev }; delete n[target]; return n; });
+    if (config.projectPath === target) {
+      const next = remaining[0] || '';
+      const d = next ? projectData[next] : null;
+      setPmMessages(d?.messages?.length ? d.messages : [PM_FRESH_WELCOME]);
+      setMissions(d?.missions || []);
+      setConfig(prev => ({ ...prev, projects: remaining, projectPath: next }));
+      setActiveView('pm'); setPmScreen('idle');
+    } else {
+      setConfig(prev => ({ ...prev, projects: remaining }));
+    }
   };
 
   const sendPmMessage = async (overrideText?: string) => {
@@ -2570,9 +2618,11 @@ const App: React.FC = () => {
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
         <MissionRail
-          projectName={projectLabel}
-          onProjectClick={() => {}}
-          onNewProject={() => {}}
+          projects={(config.projects && config.projects.length ? config.projects : (config.projectPath ? [config.projectPath] : []))}
+          activePath={config.projectPath}
+          onSelectProject={switchProject}
+          onNewProject={addProject}
+          onRemoveProject={removeProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2679,9 +2729,11 @@ const App: React.FC = () => {
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
         <MissionRail
-          projectName={projectLabel}
-          onProjectClick={() => {}}
-          onNewProject={() => {}}
+          projects={(config.projects && config.projects.length ? config.projects : (config.projectPath ? [config.projectPath] : []))}
+          activePath={config.projectPath}
+          onSelectProject={switchProject}
+          onNewProject={addProject}
+          onRemoveProject={removeProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2770,9 +2822,11 @@ const App: React.FC = () => {
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
         <MissionRail
-          projectName={config.projectPath.split(/[\\/]/).pop() || 'Canopy'}
-          onProjectClick={() => {}}
-          onNewProject={() => {}}
+          projects={(config.projects && config.projects.length ? config.projects : (config.projectPath ? [config.projectPath] : []))}
+          activePath={config.projectPath}
+          onSelectProject={switchProject}
+          onNewProject={addProject}
+          onRemoveProject={removeProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2888,17 +2942,11 @@ const App: React.FC = () => {
     <div style={{ display: 'flex', height: '100vh', background: 'var(--paper)', color: 'var(--ink)', overflow: 'hidden', fontFamily: 'var(--sans)', fontSize: 13 }}>
 
       <MissionRail
-        projectName={config.projectPath ? (config.projectPath.split(/[\\/]/).pop() || 'Canopy') : 'Canopy'}
-        onProjectClick={() => setActiveView('pm')}
-        onNewProject={() => {
-          const p = window.prompt('Open a different project folder (full path):', config.projectPath);
-          if (p && p.trim()) {
-            setConfig({ ...config, projectPath: p.trim() });
-            fetch('http://localhost:3005/api/init-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: p.trim() }) }).catch(() => {});
-            setPmMessages([{ role: 'model', content: "Welcome. I'm your PM — I plan, never execute. Want me to go over this project, or jump to a goal?" }]);
-            setActiveView('pm'); setActivePmTab('chat'); setPmScreen('idle');
-          }
-        }}
+        projects={(config.projects && config.projects.length ? config.projects : (config.projectPath ? [config.projectPath] : []))}
+        activePath={config.projectPath}
+        onSelectProject={switchProject}
+        onNewProject={addProject}
+        onRemoveProject={removeProject}
         onSettings={() => setShowSettings(true)}
       />
 
