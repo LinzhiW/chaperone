@@ -615,8 +615,8 @@ function WorkerTile({ assignment, color, workerIndex, onStart, onApprove, nudgeI
                       ? Object.entries(assignment.pendingAction.args).map(([k, v]) => `${k}: ${v}`).join('\n')
                       : String(assignment.pendingAction.args)}
                   </pre>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button onClick={() => onApprove(true)} style={{ fontSize: 11, padding: '3px 12px', background: 'var(--approve)', color: '#fff', border: 'none', borderRadius: 3, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); onApprove(true); }} style={{ fontSize: 11, padding: '3px 12px', background: 'var(--approve)', color: '#fff', border: 'none', borderRadius: 3, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
                     <button onClick={e => { e.stopPropagation(); setRejectMode('rewrite'); setRewriteInput(typeof assignment.pendingAction?.args === 'object' ? Object.values(assignment.pendingAction.args).join(' ') : String(assignment.pendingAction?.args || '')); }} style={{ fontSize: 11, padding: '3px 12px', background: 'transparent', color: 'var(--reject)', border: '1px solid var(--reject)', borderRadius: 3, cursor: 'pointer' }}>Reject</button>
                     <span style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>y / n</span>
                   </div>
@@ -1890,6 +1890,12 @@ const App: React.FC = () => {
   const [briefingAnswers, setBriefingAnswers] = useState<{ scope: string; who: string; store: string }>({ scope: '', who: '', store: '' });
   const [missionLayout, setMissionLayout] = useState<'1' | '2' | '3-4'>('3-4');
   const [activeWorker, setActiveWorker] = useState<number | null>(null);
+  // Autonomy mode — how much the CEO approves. manual = confirm every tool call;
+  // edits = auto-approve read_file, confirm writes/shell; auto = decide for me (all).
+  // A ref lets the live SSE closure in startWorker read the latest value.
+  const [autonomyMode, setAutonomyMode] = useLocalStorage<'manual' | 'edits' | 'auto'>('ac_autonomy', 'manual');
+  const autonomyModeRef = useRef(autonomyMode);
+  useEffect(() => { autonomyModeRef.current = autonomyMode; }, [autonomyMode]);
   const [archiveToast, setArchiveToast] = useState<string | null>(null);
   const [devLogNew, setDevLogNew] = useState(false);
   const [prdPendingEdits, setPrdPendingEdits] = useState<Array<{id: string; section: string; content: string; status: 'pending'|'approved'|'rejected'}>>([]);
@@ -2331,7 +2337,18 @@ const App: React.FC = () => {
       if (data.type === 'log') {
         updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, data.log] }));
       } else if (data.type === 'require_approval') {
-        updateAssignment(missionId, assignmentId, { pendingAction: { tool: data.tool, args: data.args } });
+        // Autonomy mode decides whether we pause for the CEO or auto-approve.
+        const mode = autonomyModeRef.current;
+        const auto = mode === 'auto' || (mode === 'edits' && data.tool === 'read_file');
+        if (auto) {
+          updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [AUTO-APPROVED · ${mode}] ${data.tool}`] }));
+          fetch('http://localhost:3005/api/approve-action', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId: assignmentId, approved: true }),
+          }).catch(() => {});
+        } else {
+          updateAssignment(missionId, assignmentId, { pendingAction: { tool: data.tool, args: data.args } });
+        }
       }
     };
     es.addEventListener('end', () => es.close());
@@ -2346,6 +2363,17 @@ const App: React.FC = () => {
       body: JSON.stringify({ taskId: assignmentId, approved }),
     });
   };
+
+  // If the CEO flips to an auto mode while a worker is already paused for approval,
+  // clear those pending approvals too (so the switch takes effect immediately).
+  useEffect(() => {
+    if (autonomyMode === 'manual') return;
+    missions.forEach(m => (m.assignments || []).forEach(a => {
+      if (a.pendingAction && (autonomyMode === 'auto' || (autonomyMode === 'edits' && a.pendingAction.tool === 'read_file'))) {
+        approveAction(m.id, a.id, true);
+      }
+    }));
+  }, [autonomyMode, missions]);
 
   const nudgeWorker = async (missionId: string, assignmentId: number) => {
     const message = nudgeInputs[assignmentId]?.trim();
@@ -3390,8 +3418,18 @@ const App: React.FC = () => {
                   <span style={{ fontSize: 10, color: 'var(--ink-3)', letterSpacing: 0.5 }}>{stripStatusText}</span>
                 </div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {/* Autonomy mode — how much you approve. Global; applies to all workers. */}
+                  <div title="How much you approve. Auto = decide for me (no per-call approval)." style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1.5px solid ${autonomyMode === 'auto' ? 'var(--warn)' : autonomyMode === 'edits' ? 'var(--pm)' : 'var(--rule)'}`, borderRadius: 4, padding: '2px 4px 2px 8px', background: 'var(--paper)' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: 'var(--ink-3)' }}>MODE</span>
+                    <select value={autonomyMode} onChange={e => setAutonomyMode(e.target.value as any)}
+                      style={{ fontSize: 11, border: 'none', background: 'transparent', color: autonomyMode === 'auto' ? 'var(--warn)' : autonomyMode === 'edits' ? 'var(--pm)' : 'var(--ink)', fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
+                      <option value="manual">Manual · approve each</option>
+                      <option value="edits">Auto reads · confirm actions</option>
+                      <option value="auto">Auto · decide for me</option>
+                    </select>
+                  </div>
                   <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                    started {activeMission.startedAt ?? '--:--'} · branch base: main
+                    started {activeMission.startedAt ?? '--:--'}
                   </span>
                   {!allDone && activeMission.status === 'running' && (
                     <button style={{ fontSize: 11, padding: '4px 10px', border: '1px solid var(--rule)', background: 'var(--paper)', borderRadius: 3, color: 'var(--ink-2)', cursor: 'pointer' }}>Pause mission</button>
