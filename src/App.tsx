@@ -898,7 +898,17 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDi
   mergeState: { branch: string; status: 'merging' | 'merged' | 'error'; message: string } | null;
 }) {
   const [activeFilter, setActiveFilter] = useState<'bug' | 'note' | 'bloat' | 'missing' | null>(null);
-  const [activeBranchTab, setActiveBranchTab] = useState<string>('cross');
+  const [activeBranchTab, setActiveBranchTab] = useState<string>(mission.assignments[0]?.branchName || 'cross');
+  // Real diff for the selected branch tab (replaces the old hardcoded mock diff).
+  const [branchDiffText, setBranchDiffText] = useState<string>('');
+  useEffect(() => {
+    if (activeBranchTab === 'cross') { setBranchDiffText(''); return; }
+    setBranchDiffText('… loading diff …');
+    fetch(`http://localhost:3005/api/diff?workspacePath=${encodeURIComponent(workspacePath)}&branch=${encodeURIComponent(activeBranchTab)}`)
+      .then(r => r.json())
+      .then(d => setBranchDiffText(d.diff || '(no changes on this branch)'))
+      .catch(() => setBranchDiffText('(diff unavailable — is the backend running?)'));
+  }, [activeBranchTab, workspacePath]);
   const [selectedAnnotation, setSelectedAnnotation] = useState<number>(0);
   const [prStatus, setPrStatus] = useState<'idle' | 'creating' | 'done'>('idle');
 
@@ -1063,22 +1073,18 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDi
               <span style={{ fontSize: 9, padding: '0 5px', borderRadius: 99, background: 'var(--paper-2)', color: 'var(--ink-3)', fontWeight: 700, fontFamily: 'var(--mono)' }}>{annotations.filter(a => a.branch === 'cross').length || 1}</span>
             </span>
           </div>
-          {/* Diff content */}
+          {/* Diff content — REAL git diff for the selected branch */}
           <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.6, color: 'var(--ink-2)' }}>
-            <div style={{ color: 'var(--ink-3)', marginBottom: 4 }}>@@ -10,8 +10,20 @@</div>
-            <div style={{ background: 'transparent', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}> import React from 'react';</span></div>
-            <div style={{ background: 'var(--approve-soft)', color: 'var(--approve)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>+ import {'{ useTheme }'} from '../hooks/useTheme';</span><span style={{ fontSize: 9, padding: '0 5px', borderRadius: 2, fontWeight: 700, background: WORKER_COLORS[0], color: '#fff' }}>W1</span></div>
-            <div style={{ background: 'var(--approve-soft)', color: 'var(--approve)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>+ import {'{ useHotkeys }'} from '../hooks/useHotkeys';</span><span style={{ fontSize: 9, padding: '0 5px', borderRadius: 2, fontWeight: 700, background: WORKER_COLORS[2], color: '#fff' }}>W3</span></div>
-            <div style={{ background: 'transparent', color: 'var(--ink-2)' }}> </div>
-            <div style={{ background: 'transparent', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}> function Header() {'{'}</span></div>
-            <div style={{ background: 'var(--approve-soft)', color: 'var(--approve)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>+   const [theme, toggleTheme] = useTheme();</span><span style={{ fontSize: 9, padding: '0 5px', borderRadius: 2, fontWeight: 700, background: WORKER_COLORS[0], color: '#fff' }}>W1</span></div>
-            <div style={{ background: 'var(--approve-soft)', color: 'var(--approve)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>+   useHotkeys(shortcuts);</span><span style={{ fontSize: 9, padding: '0 5px', borderRadius: 2, fontWeight: 700, background: WORKER_COLORS[2], color: '#fff' }}>W3</span></div>
-            <div style={{ margin: '6px 0 6px 24px', padding: '6px 8px', borderRadius: 4, background: 'var(--pm-soft)', border: '1px solid var(--pm)', fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--pm)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-              <span>ℹ</span>
-              <span><strong>Reviewer:</strong> both branches add imports in the same hunk — trivial rebase, no conflict.</span>
-            </div>
-            <div style={{ background: 'transparent', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>   return (</span></div>
-            <div style={{ background: 'transparent', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ flex: 1 }}>     &lt;header className={'{"header " + theme}'}&gt;</span></div>
+            {activeBranchTab === 'cross' ? (
+              <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--sans)', fontSize: 12, lineHeight: 1.6 }}>
+                Cross-branch notes are in the Annotations panel on the left. Pick a branch tab
+                above to see its real diff, or use <strong>View diff</strong> below.
+              </div>
+            ) : (
+              (branchDiffText || '(no changes)').split('\n').map((ln, i) => (
+                <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: ln.startsWith('+') && !ln.startsWith('+++') ? 'var(--approve)' : ln.startsWith('-') && !ln.startsWith('---') ? '#c0392b' : ln.startsWith('@@') ? 'var(--pm)' : 'var(--ink-2)' }}>{ln || ' '}</div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -1968,6 +1974,23 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [activeView, config.projectPath]);
 
+  // Auto-start dispatched workers. The mission was already approved by the CEO, so each
+  // worker should actually run (execute-mission) — it then PAUSES at every tool call for
+  // HITL approval. Without this, workers sat at "booting" forever (onStart was never wired
+  // to any trigger). Guard with a ref so each worker starts exactly once.
+  const startedWorkersRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (activeView === 'pm' || !config.projectPath || backendStatus !== 'online') return;
+    const mission = missions.find(m => m.id === activeView);
+    if (!mission || mission.status !== 'running') return;
+    mission.assignments.forEach((a, idx) => {
+      if (a.status === 'proposed' && idx < 3 && !startedWorkersRef.current.has(a.id)) {
+        startedWorkersRef.current.add(a.id);
+        startWorker(mission.id, a.id);
+      }
+    });
+  }, [activeView, missions, config.projectPath, backendStatus]);
+
   // ─── Handlers ────────────────────────────────────────────────────────────────
 
   const refreshFiles = async () => {
@@ -2368,15 +2391,10 @@ const App: React.FC = () => {
     setDevLogNew(true);
     setSelectedLogEntryIdx(0);
     setArchiveToast(name);
-    setPrdPendingEdits([
-      { id: 'feat-1', section: 'Features', content: `**Dark mode** toggle — persisted per-device. Completed in mission "${name}".`, status: 'pending' },
-      { id: 'feat-2', section: 'Features', content: `**JSON export** from header menu. Excludes archived by default; "include archived" toggle available.`, status: 'pending' },
-      { id: 'nongoal-1', section: 'Non-goals', content: `**No native installer** — web app only. Decision recorded in dev log.`, status: 'pending' },
-    ]);
     setTimeout(() => setArchiveToast(null), 5000);
     setPmMessages(prev => [...prev, {
       role: 'model',
-      content: `Got the report. I've written entry "${name}" to Dev log.md and queued **3 PRD edits** for your review. Open the PRD.md tab when ready.`,
+      content: `Archived "${name}" — the mission is closed and logged. Merged branches are already in your base branch.`,
     }]);
   };
 
