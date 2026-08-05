@@ -207,7 +207,7 @@ function MissionRail({ projectName, onProjectClick, onNewProject, onSettings }: 
       </div>
       <div
         onClick={onNewProject}
-        title="Open another project (soon)"
+        title="Open / switch project"
         style={{
           width: 44, height: 44, borderRadius: 22,
           border: '1.5px dashed #6e8b54',
