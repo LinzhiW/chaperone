@@ -112,9 +112,9 @@ function SideBottomRow({ icon: Icon, label, onClick }: { icon: React.FC; label: 
   );
 }
 
-function SidePmItem({ active }: { active: boolean }) {
+function SidePmItem({ active, onClick }: { active: boolean; onClick?: () => void }) {
   return (
-    <div style={{ marginTop:2,marginBottom:2,padding:'5px 10px',borderRadius:4,background:active?'var(--pm-soft)':'transparent',borderLeft:active?'2px solid var(--pm)':'2px solid transparent',display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:active?'var(--pm)':'var(--ink-2)' }}>
+    <div onClick={onClick} title="Open PM chat" style={{ marginTop:2,marginBottom:2,padding:'5px 10px',borderRadius:4,background:active?'var(--pm-soft)':'transparent',borderLeft:active?'2px solid var(--pm)':'2px solid transparent',display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:active?'var(--pm)':'var(--ink-2)',cursor:'pointer' }}>
       <span style={{ width:6,height:6,borderRadius:'50%',background:'var(--pm)',display:'inline-block' }} />
       <span>PM</span>
     </div>
@@ -278,7 +278,7 @@ function Sidebar({
 
         {/* Team */}
         <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded addable addColor="var(--approve)" onAdd={onRecruit} />
-        <SidePmItem active={isPmActive} />
+        <SidePmItem active={isPmActive} onClick={onSelectPm} />
         {team.map(w => (
           <div key={w.id} onClick={onSelectSkills} title="open loadout" style={{ padding:'3px 10px 3px 38px',borderRadius:4,display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer',color:'var(--ink-2)' }}>
             <span style={{ width:6,height:6,borderRadius:99,background:'var(--worker)' }} />
