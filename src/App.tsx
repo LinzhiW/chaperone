@@ -2042,7 +2042,7 @@ const App: React.FC = () => {
   };
 
   const addProject = () => {
-    const p = window.prompt('Open / add a project folder (full path):', 'C:\\Users\\linzh\\Desktop\\IDE\\');
+    const p = window.prompt('Open / add a project folder (full path)\ne.g. /Users/you/code/my-app  or  C:\\Users\\you\\code\\my-app', '');
     if (p && p.trim()) switchProject(p.trim());
   };
 
@@ -2500,7 +2500,7 @@ const App: React.FC = () => {
   };
 
   const handleStartFromScratch = () => {
-    const p = window.prompt('Where should I create your new project?\n(I will mkdir if needed and create .chaperone/ inside)', 'C:\\Users\\linzh\\Desktop\\IDE\\new-project');
+    const p = window.prompt('Where should I create your new project?\n(I will mkdir if needed and create .chaperone/ inside)\ne.g. /Users/you/code/new-project  or  C:\\Users\\you\\code\\new-project', '');
     if (p && p.trim()) enterProject(p, onbKey);
   };
 
@@ -2553,7 +2553,7 @@ const App: React.FC = () => {
   // reordered per user: Start from scratch / Open folder / Clone GitHub.
   if (onboardingPhase === 'welcome') {
     const onChooseFolder = () => {
-      const p = window.prompt('Enter project workspace path:', onbPath || 'C:\\Users\\linzh\\Desktop\\IDE\\chaperone');
+      const p = window.prompt('Enter project workspace path\ne.g. /Users/you/code/my-app  or  C:\\Users\\you\\code\\my-app', onbPath || '');
       if (p && p.trim()) {
         const trimmed = p.trim();
         setOnbPath(trimmed);

@@ -29,3 +29,12 @@ npm-debug.log*
 
 # Superpowers cache (if local)
 .superpowers/
+
+# Private working material — kept locally, never published.
+# These stay out of the repo even as they keep being updated.
+# (docs/SESSION_HANDOFF.md has long flagged the content assets as "do NOT commit";
+#  this makes that intent enforced rather than remembered.)
+.design/agent-company/chats/
+docs/product-intro.md
+docs/weekly-report.md
+docs/weekly/
