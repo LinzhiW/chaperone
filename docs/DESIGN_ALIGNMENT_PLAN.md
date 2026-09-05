@@ -20,7 +20,7 @@ Previous sessions built UI from imagination (CSS tokens only, never read the act
 **Goal:** Visual primitives shared by every screen are correct before building any screen.
 
 - [ ] Read remaining wireframe files: `wf-pm.jsx`, `wf-mission.jsx`, `wf-worker-brief.jsx`, `wf-recruit-hitl.jsx`, `wf-phase2.jsx`, `wf-current.jsx`, `design-canvas.jsx`
-- [ ] Read 3 chat transcripts in `.design/agent-company/chats/` to understand intent
+- [ ] Read the 3 design chat transcripts to understand intent (maintainer-local, not in the repo)
 - [ ] Fix `src/index.css` tokens to match `wf-styles.css` exactly:
   - `--rule: #1f1d1a` (solid, not rgba)
   - Add `--worker`, `--worker-soft`, `--review-soft`, `--approve-soft`, `--pm-soft`, `--warn`, `--highlight`, `--comment` (sticky note)
