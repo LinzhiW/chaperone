@@ -1,4 +1,4 @@
-# Design Spec: Canopy - Human-in-the-Loop Multi-Agent Platform
+# Design Spec: Chaperone - Human-in-the-Loop Multi-Agent Platform
 
 **Date:** 2026-04-26
 **Topic:** Core Architecture and Workflow Design

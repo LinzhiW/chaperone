@@ -3,7 +3,7 @@
 // Drag skills from the library into 6 slots. Name + description + save target.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Skill, RolePreset } from '../canopyTypes';
+import type { Skill, RolePreset } from '../chaperoneTypes';
 import { SkillCard, EmptySlot, Label, EmptyBlock } from './SkillCard';
 import { createSavedSet } from './api';
 

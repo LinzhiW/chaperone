@@ -1,4 +1,4 @@
-# Canopy — Acceptance (验收 SOP + 反例库)
+# Chaperone — Acceptance (验收 SOP + 反例库)
 
 > "Can we call it done" source of truth. The CEO click-tests every slice in the
 > running app. AI may pre-check (→ `ai_verified`) but **only the CEO sets `accepted`.**
@@ -19,7 +19,7 @@ Open the PM tab → the "📋 Parallelization Plan" card.
 - [ ] **Recommended gear = L1** with a read-only audit allocation (because foundation
       volatility is High on this early project).
 - [ ] Change the goal and regenerate → the plan content changes accordingly.
-- [ ] **Reload the page → the plan is still there** (loaded from `.canopy/pm-plan.json`).
+- [ ] **Reload the page → the plan is still there** (loaded from `.chaperone/pm-plan.json`).
 
 **Unacceptable:**
 - [ ] Card shows fixed/generic content unrelated to this project.

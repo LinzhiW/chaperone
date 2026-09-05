@@ -1,5 +1,5 @@
-# Canopy — User Interaction Journey
-**Derived from:** Canopy Wireframes _standalone_5.26.html  
+# Chaperone — User Interaction Journey
+**Derived from:** Chaperone Wireframes _standalone_5.26.html  
 **Date:** 2026-05-27
 
 ---

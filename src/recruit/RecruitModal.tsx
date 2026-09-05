@@ -9,7 +9,7 @@
 // App.tsx inline-style conventions. No edits to App.tsx (parent wires open/close).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { RolePreset, SavedSet, Skill, Worker } from '../canopyTypes';
+import type { RolePreset, SavedSet, Skill, Worker } from '../chaperoneTypes';
 import {
   PRESET_DESC,
   fetchRolePresets,

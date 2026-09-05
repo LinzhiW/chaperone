@@ -1,4 +1,4 @@
-# TODO — Canopy (provider-agnostic refactor)
+# TODO — Chaperone (provider-agnostic refactor)
 
 > Created 2026-06-09 alongside PRD v2. Backend-first: get the engine layer right,
 > then align the UI against real functionality. Each assignment = one branch

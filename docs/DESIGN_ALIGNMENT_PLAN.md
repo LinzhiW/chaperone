@@ -2,7 +2,7 @@
 
 **Started:** 2026-05-19
 **Spec source:** `.design/agent-company/project/` (21 wireframes in 7 sections)
-**Reference doc:** `.design/agent-company/project/Canopy Wireframes.html`
+**Reference doc:** `.design/agent-company/project/Chaperone Wireframes.html`
 **Working rule:** After every milestone, dev server is running and a single screen is shown for user sign-off **before** moving to the next milestone. No silent batch builds.
 
 ---

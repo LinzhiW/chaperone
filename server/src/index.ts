@@ -124,7 +124,7 @@ app.get('/api/status', (req, res) => res.json({ status: 'online' }));
 app.get('/api/skills', (req, res) => res.json({ skills: listSkills() }));
 
 // ─── Persistence: Team / Saved Sets / Role Presets ──────────────────────────
-// JSON files under <workspacePath>/.canopy/. Missing file = empty list.
+// JSON files under <workspacePath>/.chaperone/. Missing file = empty list.
 // See docs/API_CONTRACT.md.
 
 const getWorkspacePath = (req: any): string | undefined =>
@@ -598,12 +598,12 @@ app.post('/api/init-project', (req, res) => {
   const { projectPath } = req.body;
   if (!projectPath) return res.status(400).json({ error: 'Missing projectPath' });
   try {
-    const acDir = path.join(projectPath, '.canopy');
+    const acDir = path.join(projectPath, '.chaperone');
     fs.mkdirSync(acDir, { recursive: true });
     const starters: Record<string, string> = {
-      'PRD.md': '# Product Requirements Document\n\n_Created by Canopy. PM will populate this as you brief missions._\n',
-      'SOP.md': '# Standard Operating Procedure\n\n_Created by Canopy. PM will populate this with team norms._\n',
-      'Dev log.md': '# Development Log\n\n_Created by Canopy. Reviewer reports will be appended here after each archived mission._\n',
+      'PRD.md': '# Product Requirements Document\n\n_Created by Chaperone. PM will populate this as you brief missions._\n',
+      'SOP.md': '# Standard Operating Procedure\n\n_Created by Chaperone. PM will populate this with team norms._\n',
+      'Dev log.md': '# Development Log\n\n_Created by Chaperone. Reviewer reports will be appended here after each archived mission._\n',
     };
     for (const [name, content] of Object.entries(starters)) {
       const p = path.join(acDir, name);
@@ -737,9 +737,9 @@ If a branch has no diff, include one "note" annotation saying so.`;
 
 // --- Project docs (PRD / SOP / Dev log) — read REAL files from the project ---
 const DOC_CANDIDATES: Record<string, string[]> = {
-  PRD:    ['.canopy/PRD.md', 'PRD.md', 'docs/PRD.md', 'prd.md'],
-  SOP:    ['.canopy/SOP.md', 'SOP.md', 'docs/SOP.md'],
-  DevLog: ['.canopy/Dev log.md', 'Dev log.md', 'docs/Dev log.md', 'CHANGELOG.md', 'docs/CHANGELOG.md'],
+  PRD:    ['.chaperone/PRD.md', 'PRD.md', 'docs/PRD.md', 'prd.md'],
+  SOP:    ['.chaperone/SOP.md', 'SOP.md', 'docs/SOP.md'],
+  DevLog: ['.chaperone/Dev log.md', 'Dev log.md', 'docs/Dev log.md', 'CHANGELOG.md', 'docs/CHANGELOG.md'],
 };
 const canonicalDoc = (name: string) => name === 'DevLog' ? 'Dev log.md' : `${name}.md`;
 
@@ -752,16 +752,16 @@ app.get('/api/doc', (req, res) => {
       try { return res.json({ found: true, path: rel, content: fs.readFileSync(p, 'utf-8') }); } catch {}
     }
   }
-  res.json({ found: false, path: `.canopy/${canonicalDoc(name)}`, content: '' });
+  res.json({ found: false, path: `.chaperone/${canonicalDoc(name)}`, content: '' });
 });
 
 app.put('/api/doc', (req, res) => {
   const { workspacePath, name, content } = req.body;
   if (!workspacePath || !DOC_CANDIDATES[name]) return res.status(400).json({ error: 'Missing workspacePath or bad name' });
   try {
-    const dir = path.join(workspacePath, '.canopy');
+    const dir = path.join(workspacePath, '.chaperone');
     fs.mkdirSync(dir, { recursive: true });
-    const rel = `.canopy/${canonicalDoc(name)}`;
+    const rel = `.chaperone/${canonicalDoc(name)}`;
     fs.writeFileSync(path.join(workspacePath, rel), content ?? '');
     res.json({ ok: true, path: rel });
   } catch (err: any) {
@@ -787,7 +787,7 @@ app.post('/api/project-review', async (req, res) => {
     const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
     const pkg = readMaybe(['package.json'], 1500);
     let topLevel: string[] = [];
-    try { topLevel = fs.readdirSync(workspacePath).filter(f => !['node_modules', '.git', 'dist', '.next', '.canopy'].includes(f)); } catch {}
+    try { topLevel = fs.readdirSync(workspacePath).filter(f => !['node_modules', '.git', 'dist', '.next', '.chaperone'].includes(f)); } catch {}
     let docs: string[] = [];
     try { const d = path.join(workspacePath, 'docs'); if (fs.existsSync(d)) docs = fs.readdirSync(d).slice(0, 30); } catch {}
     const prompt = `You are the PM. The user just pointed you at this project and asked you to get up to speed. Using ONLY the real files below, brief them.
@@ -823,7 +823,7 @@ ${docs.join(', ') || '(no docs/ folder)'}`;
 // Operating model: docs/PM_OPERATING_MODEL.md.
 
 const TREE_IGNORE = new Set([
-  'node_modules', '.git', 'dist', '.next', '.canopy', 'build', 'out',
+  'node_modules', '.git', 'dist', '.next', '.chaperone', 'build', 'out',
   'Library', 'Temp', 'Logs', '.vite', 'coverage', '.turbo', '.cache',
 ]);
 
@@ -849,8 +849,8 @@ function walkTree(root: string, maxFiles = 400, maxDepth = 5): string[] {
 }
 
 // Concise embedded operating model — travels with the PM (not read from the target
-// workspace), per the "Canopy ships its own copy" decision. Mirrors PM_OPERATING_MODEL.md.
-const PM_MODEL_PREAMBLE = `You are the PM (lead agent) of Canopy, a multi-agent dev platform. The human is the CEO and makes the final call. Plan by this operating model:
+// workspace), per the "Chaperone ships its own copy" decision. Mirrors PM_OPERATING_MODEL.md.
+const PM_MODEL_PREAMBLE = `You are the PM (lead agent) of Chaperone, a multi-agent dev platform. The human is the CEO and makes the final call. Plan by this operating model:
 - Work is organized as vertical slices. Find the GOLDEN PATH: the serial chain of required slices with HARD dependencies — they cannot be built in parallel because they share foundation (auth, data model, routing, shared state, API client, core pages). Separate these from beta/launch SUPPORT slices.
 - FOUNDATION FILES = real files multiple slices must touch (schema/migrations, routing, shared state, API client, shared components, core pages/data flow, backend contracts). Name the REAL ones from the file tree.
 - FOUNDATION VOLATILITY = how much those files are still changing. High if the active path spans many of them or they look unstable/early.
@@ -874,8 +874,8 @@ app.post('/api/pm/plan', async (req, res) => {
     };
     const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
     const pkg = readMaybe(['package.json'], 1200);
-    const mvp = readMaybe(['docs/MVP.md', '.canopy/MVP.md', 'MVP.md'], 2500);
-    const progress = readMaybe(['docs/PROGRESS.md', '.canopy/PROGRESS.md', 'PROGRESS.md'], 1500);
+    const mvp = readMaybe(['docs/MVP.md', '.chaperone/MVP.md', 'MVP.md'], 2500);
+    const progress = readMaybe(['docs/PROGRESS.md', '.chaperone/PROGRESS.md', 'PROGRESS.md'], 1500);
     const tree = walkTree(workspacePath);
 
     const nonEnglish = /[一-鿿぀-ヿ가-힯]/.test(goal || '');
@@ -968,7 +968,7 @@ app.post('/api/pm/explore', async (req, res) => {
     /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
     /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
 
-  const system = `You are the PM (lead agent) of Canopy for THIS project. The CEO just asked you to get up to speed on it.
+  const system = `You are the PM (lead agent) of Chaperone for THIS project. The CEO just asked you to get up to speed on it.
 
 You have READ-ONLY tools — actually USE them to explore, the way a capable engineer would: call list_files to see what exists, then read the files that reveal what this project is (README, package.json, docs/*, key source/config). You decide what to open — read whatever you need before answering. Do not guess about something you could just read.
 

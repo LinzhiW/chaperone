@@ -7,7 +7,7 @@
 //   - "Save as new set" hands the current draft up to the compose flow
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Skill, SavedSet, Worker } from '../canopyTypes';
+import type { Skill, SavedSet, Worker } from '../chaperoneTypes';
 import { SkillCard, SkillChip, EmptyBlock } from './SkillCard';
 import { updateWorker } from './api';
 

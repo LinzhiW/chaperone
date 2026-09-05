@@ -1,4 +1,4 @@
-# Canopy — Progress Map
+# Chaperone — Progress Map
 
 > "Where are we / who changed what" source of truth. The right-side progress view is
 > rebuilt from this file. Update on every slice status change, verification, blocker,
@@ -23,7 +23,7 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
             chooses what to read, replies in its own voice. No hand-fed file blobs.
   [done]    PM intro + presets visible in idle even with prior chat history
   [done]    language mirrors CEO's last typed message (English in → English out; 中文 → 中文)
-  [done]    ProgressBoard — global collapsible bottom bar reads .canopy/progress.json;
+  [done]    ProgressBoard — global collapsible bottom bar reads .chaperone/progress.json;
             collapsed: project/gear/counts/badges; expanded: full slice tree with subtasks.
             CEO: "可以这个位置不错" (position good; label "vertical slices" noted for later)
   [done]    presets rewired: Check progress + Plan agent dispatch now agentic (see S2 log)
@@ -64,7 +64,7 @@ B  "Check project progress" → agentic /api/pm/progress-report: PM reads real P
 C  dispatchMission no longer switches views — stays in PM chat, drops a trace message.
 D  Running missions render as inline clickable cards in the chat; click → detail view.
    + dismiss (✕) to cancel stuck/unwanted missions.
-FIX seed pollution: getProgress no longer fabricates Canopy's own slices into every
+FIX seed pollution: getProgress no longer fabricates Chaperone's own slices into every
    project (was polluting phrasewise with S1-S4). Returns EMPTY map when none exists.
 ```
 
@@ -73,7 +73,7 @@ FIX seed pollution: getProgress no longer fabricates Canopy's own slices into ev
 ```
 src/App.tsx                    front-end app shell, all views, state
 server/src/index.ts            all backend endpoints / PM endpoints
-server/src/persistence.ts      .canopy/ JSON persistence
+server/src/persistence.ts      .chaperone/ JSON persistence
 server/src/providers/*         model adapters (Claude/OpenAI/Gemini)
 ```
 
@@ -92,7 +92,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 - Files changed: server/src/index.ts, server/src/persistence.ts, src/App.tsx
 - Verification: AI pre-check passed in running app (5183) — plan card renders the real
   project (enumerated real provider files not listed in any doc), Gear L1 + reason,
-  serial golden path, persisted to .canopy/pm-plan.json and reloaded on refresh. No
+  serial golden path, persisted to .chaperone/pm-plan.json and reloaded on refresh. No
   console errors.
 - Result: ai_verified → awaiting_human_acceptance
 
@@ -120,7 +120,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
   - Language detection: frontend detects CJK in last user-typed message → sends `lang:'zh'`;
     backend maps to explicit language name to prevent model guessing wrong language.
   - `ProgressBoard` component: collapsible bottom bar above BottomBar; reads
-    `/api/pm/progress` (→ `.canopy/progress.json`); 7-state internal lifecycle folded to
+    `/api/pm/progress` (→ `.chaperone/progress.json`); 7-state internal lifecycle folded to
     5 CEO-facing labels (done/working/needs you/waiting/blocked).
   - `GET /api/pm/progress` + `PUT /api/pm/progress` endpoints + `getProgress()`/`saveProgress()`
     in persistence.ts. Seeds `SEED_PROGRESS` on first read (S1/S1.5 accepted, S2-S4 pending).
@@ -151,7 +151,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
   out from the Node backend at build time (curl reached the hosts; same backend succeeded
   earlier in the day → transient network/provider issue). Will retry on a loop.
 - Status: S2 ai_verified; S3/S4 plumbing ai_verified (sandbox), model-half pending.
-- Files changed: server/src/index.ts, src/App.tsx, docs/ACCEPTANCE.md, .canopy/progress.json
+- Files changed: server/src/index.ts, src/App.tsx, docs/ACCEPTANCE.md, .chaperone/progress.json
 
 ### 2026-07-06 (later) — by Claude Code (autonomous run: S3+S4 LIVE verified + proxy fix)
 - ROOT CAUSE of the model-API outage: this machine reaches OpenAI/Google/Anthropic ONLY
@@ -173,7 +173,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 - Status: S2 ai_verified; S3 + S4 ai_verified (LIVE). Golden path S1→S4 mechanism complete.
   Only the CEO click-test acceptance remains (Human Acceptance Gate — mine to build, yours to accept).
 - Files: server/src/index.ts, server/src/providers/openai.ts, server/dev.cjs, server/package.json,
-  docs/PROGRESS.md, docs/ACCEPTANCE.md, .canopy/progress.json
+  docs/PROGRESS.md, docs/ACCEPTANCE.md, .chaperone/progress.json
 
 ### 2026-07-06 (iterations) — by Claude Code (autonomous run: S5 + S7)
 - S5 L2 layered parallel plan + overlap gate:
@@ -194,7 +194,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 - Frontend `vite build` clean (exit 0).
 - Status: S5 + S7 ai_verified. Post-MVP roadmap: 2 of the 7 iteration slices built.
 - Files: server/src/index.ts, server/src/providers/index.ts, src/App.tsx, docs/MVP.md,
-  docs/PROGRESS.md, .canopy/progress.json
+  docs/PROGRESS.md, .chaperone/progress.json
 
 ## Backend Readiness (post-MVP iterations) — as of 2026-07-06
 ```
@@ -215,4 +215,4 @@ S11 Billing        🔴 CEO decision (pricing + payment provider). Not started.
   remove → gone). Auto-parallel-dispatch left for CEO confirm.
 - Verified existing S8/S9 backends are ready (skills 47, saved-sets, team CRUD, 6 role
   presets, skill injection in execute-mission). Documented that only their UIs remain.
-- Files: server/src/index.ts, docs/MVP.md, docs/PROGRESS.md, .canopy/progress.json
+- Files: server/src/index.ts, docs/MVP.md, docs/PROGRESS.md, .chaperone/progress.json

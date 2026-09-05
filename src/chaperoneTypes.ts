@@ -1,10 +1,10 @@
-// Canopy shared types — team / skills / loadouts / saved sets.
+// Chaperone shared types — team / skills / loadouts / saved sets.
 //
 // Everything here is USER-DEFINED and starts EMPTY. The user creates their own
 // workers, skills, and saved sets. The PM may *suggest* presets per task, but the
 // user decides whether to adopt them — nothing is pre-populated for them.
 //
-// Persisted as JSON files under <projectPath>/.canopy/ via the backend
+// Persisted as JSON files under <projectPath>/.chaperone/ via the backend
 // (see docs/API_CONTRACT.md). Frontend and backend both build to these shapes.
 
 export interface Skill {

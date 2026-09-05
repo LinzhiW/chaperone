@@ -1,4 +1,4 @@
-﻿# Canopy / Agent Company Start Here
+﻿# Chaperone Start Here
 
 Last updated: 2026-06-22
 

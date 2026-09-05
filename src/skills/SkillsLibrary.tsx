@@ -3,7 +3,7 @@
 // Source skills are REAL (GET /api/skills). Empty states when nothing exists.
 
 import React, { useMemo, useState } from 'react';
-import type { Skill, SavedSet, Worker } from '../canopyTypes';
+import type { Skill, SavedSet, Worker } from '../chaperoneTypes';
 import { LibrarySkillCard, EmptyBlock } from './SkillCard';
 import { colorForSkill } from './api';
 

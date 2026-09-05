@@ -13,7 +13,7 @@
 //   POST /api/saved-sets       { workspacePath, set } → { set }
 //   GET  /api/role-presets?workspacePath=…            → { presets: RolePreset[] }
 
-import type { Skill, SavedSet, Worker, RolePreset } from '../canopyTypes';
+import type { Skill, SavedSet, Worker, RolePreset } from '../chaperoneTypes';
 
 export const API_BASE = 'http://localhost:3005';
 

@@ -1,4 +1,4 @@
-# Canopy — Decision Log
+# Chaperone — Decision Log
 
 > Big "we've-thought-this-through" calls live here, newest on top. Not for daily
 > task tracking (that's TODO.md) — only direction-level decisions and the reasoning,
@@ -8,7 +8,7 @@
 
 ## 2026-06-23 — Open-source / monetization: defer the license decision
 
-**Question raised:** Should Canopy be open source? Tension: target users are
+**Question raised:** Should Chaperone be open source? Tension: target users are
 non-technical, but open-sourcing seems to force "bring your own API key," which is
 unfriendly to non-tech users. Also unsure how to charge (usage is hard to meter) and
 worried the product is too thin vs. Codex / Claude Code, which ship new features

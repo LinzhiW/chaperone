@@ -4,7 +4,7 @@
 // "equip immediately" select. All fields functional; submits real content.
 
 import React, { useRef, useState } from 'react';
-import type { Skill, Worker } from '../canopyTypes';
+import type { Skill, Worker } from '../chaperoneTypes';
 import { addSkill, slugify } from './api';
 import { Label } from './SkillCard';
 

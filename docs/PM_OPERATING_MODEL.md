@@ -1,14 +1,14 @@
-# Canopy — PM Operating Model
+# Chaperone — PM Operating Model
 
-> **What this is.** The operating model for Canopy's lead agent — the **PM**. It is
+> **What this is.** The operating model for Chaperone's lead agent — the **PM**. It is
 > **derived from** the shared `dev-workflow.md` (the human's personal Claude/Codex
-> SOP), but it is a **separate, product-owned artifact**: Canopy ships this, so it
+> SOP), but it is a **separate, product-owned artifact**: Chaperone ships this, so it
 > **cannot depend on any file on the builder's machine**. During development we keep
-> the two aligned; over time this file grows the Canopy-specific layer (skills,
+> the two aligned; over time this file grows the Chaperone-specific layer (skills,
 > provider-agnosticism, GUI checkpoints) while the personal SOP stays leaner.
 >
 > Scope: this doc specs the **PM's behavior** (planning, dispatch, gears, gates).
-> The fuller Canopy product spec (UI, skill system, provider adapters, etc.) lives
+> The fuller Chaperone product spec (UI, skill system, provider adapters, etc.) lives
 > elsewhere and references this.
 
 ---
@@ -29,8 +29,8 @@ CEO  (the human — you)        ← makes the final call; the only one who can A
 - **PM = lead agent.** Owns the operating model in this doc. Plans before dispatching.
 - **Workers / Reviewer = sub-agents** the PM fans out and fans in.
 
-(In the shared workflow this role is "PM / Coordinator agent"; in Canopy the human is
-the CEO and the lead agent is the PM. Same responsibilities, Canopy naming.)
+(In the shared workflow this role is "PM / Coordinator agent"; in Chaperone the human is
+the CEO and the lead agent is the PM. Same responsibilities, Chaperone naming.)
 
 ---
 
@@ -167,7 +167,7 @@ Acceptance is behavior-level     → not "a card appeared"; real file / real dif
 
 ---
 
-## 7 · Canopy-specific layer (high-level — details TBD)
+## 7 · Chaperone-specific layer (high-level — details TBD)
 
 These sit **on top of** the operating model above and make it a product, not a personal
 SOP. Specced later; placeholders now.
@@ -181,7 +181,7 @@ SOP. Specced later; placeholders now.
 - **GUI checkpoints (not a terminal).** Gear-shift proposals, acceptance hand-offs, and
   parallelization plans render as **cards for the CEO** to confirm/click — the
   human-control surface. *Card UX: TBD.*
-- **Persistence.** Tasks, plans, gears, and states persist in `<workspace>/.canopy/`
+- **Persistence.** Tasks, plans, gears, and states persist in `<workspace>/.chaperone/`
   so the Current Map and history survive reloads. *Schema: TBD.*
 
 ---
@@ -190,6 +190,6 @@ SOP. Specced later; placeholders now.
 
 This file is **derived from** `~/.claude/dev-workflow.md` (≡ `~/.Codex/dev-workflow.md`,
 hardlinked). That file is the builder's personal SOP and the source of the multi-agent
-dispatch design. **This file is the product source of truth that ships with Canopy.**
-Keep them aligned during development; expect them to diverge as Canopy grows §7. When
+dispatch design. **This file is the product source of truth that ships with Chaperone.**
+Keep them aligned during development; expect them to diverge as Chaperone grows §7. When
 the dispatch model changes in one, reconcile the other at the next milestone.

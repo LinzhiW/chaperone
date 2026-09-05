@@ -4,7 +4,7 @@
 // Colors come from api.colorForSkill — the backend doesn't store them.
 
 import React from 'react';
-import type { Skill } from '../canopyTypes';
+import type { Skill } from '../chaperoneTypes';
 import { colorForSkill, sourceIcon, sourceLabel } from './api';
 
 function skillColor(skill: Skill): string {

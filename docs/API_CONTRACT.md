@@ -1,8 +1,8 @@
-# Canopy API Contract (v1) — for the parallel build
+# Chaperone API Contract (v1) — for the parallel build
 
 All team/skill data is **user-defined** and starts **empty**. Persist as JSON files
-under `<projectPath>/.canopy/` (`team.json`, `saved-sets.json`, `role-presets.json`).
-Shared types: [`src/canopyTypes.ts`](../src/canopyTypes.ts). Backend base: `http://localhost:3005`.
+under `<projectPath>/.chaperone/` (`team.json`, `saved-sets.json`, `role-presets.json`).
+Shared types: [`src/chaperoneTypes.ts`](../src/chaperoneTypes.ts). Backend base: `http://localhost:3005`.
 This contract is the single source of truth so the frontend and backend agents stay in sync.
 
 ## Team (recruited workers — persistent)
@@ -38,5 +38,5 @@ is present, PM incorporates them and returns a `plan`.
 current reconnected flow keeps working while the frontend migrates to `kind`.
 
 ## Persistence note
-Store under the project's `.canopy/` dir (created next to `.canopy/PRD.md` etc. by
+Store under the project's `.chaperone/` dir (created next to `.chaperone/PRD.md` etc. by
 `/api/init-project`). Read-on-GET, write-on-mutation. Missing file = empty list.

@@ -1,4 +1,4 @@
-# Product Requirements Document (PRD) — Canopy
+# Product Requirements Document (PRD) — Chaperone
 
 > **v2 · 2026-06-09** — Major direction update. Supersedes the v1 single-stack
 > (Gemini-only) PRD. See `docs/CHANGELOG.md` for the rationale and migration notes.
@@ -13,7 +13,7 @@ A **provider-agnostic, GUI-first multi-agent orchestration platform** that lets
 machine — with **checkpoint-gated human control** and **git branch isolation**
 for safety, and **never any silent background token burn**.
 
-Canopy is **one architecture / one pipeline**. The orchestration, the
+Chaperone is **one architecture / one pipeline**. The orchestration, the
 human-control model, skill routing, and git isolation are all built by us and are
 **vendor-independent**. Different AI vendors plug in only as **interchangeable
 model backends** — Claude, GPT, Gemini, DeepSeek, or a local model — through a

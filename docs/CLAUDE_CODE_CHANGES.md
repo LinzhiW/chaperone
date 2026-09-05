@@ -115,7 +115,7 @@ Intentionally kept as literals:
 - DESIGN_LOG.md §15 — alignment gap analysis (priority guide for this phase)
 - CLAUDE_CODE_KICKOFF.md — 8-phase updated execution order, conflict policy (design wins)
 - CLAUDE_CODE_REFACTOR_TOKENS.md — token refactor brief (done with CSS vars, see above)
-- `Canopy Wireframes.html` — 21 wireframes, 7 user-journey sections
+- `Chaperone Wireframes.html` — 21 wireframes, 7 user-journey sections
 - `Dashboard Hi-Fi.html` — standalone hi-fi mockup
 - chat3.md — 11 comments from Linzhi to Claude Design (see §Unprocessed Comments below)
 

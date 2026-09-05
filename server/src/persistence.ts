@@ -1,11 +1,11 @@
-// Canopy persistence — JSON files under <projectPath>/.canopy/.
+// Chaperone persistence — JSON files under <projectPath>/.chaperone/.
 // Read-on-GET, write-on-mutation. Missing file = empty list.
-// Shapes mirror src/canopyTypes.ts (Worker / SavedSet / RolePreset).
+// Shapes mirror src/chaperoneTypes.ts (Worker / SavedSet / RolePreset).
 
 import fs from 'fs';
 import path from 'path';
 
-// --- Shapes (mirror src/canopyTypes.ts) ---
+// --- Shapes (mirror src/chaperoneTypes.ts) ---
 export interface Worker {
   id: string;                 // "W1", "W2", …
   displayName: string;
@@ -33,10 +33,10 @@ export interface RolePreset {
 }
 
 // --- File helpers ---
-const canopyDir = (workspacePath: string) => path.join(workspacePath, '.canopy');
+const chaperoneDir = (workspacePath: string) => path.join(workspacePath, '.chaperone');
 
 const filePath = (workspacePath: string, name: string) =>
-  path.join(canopyDir(workspacePath), name);
+  path.join(chaperoneDir(workspacePath), name);
 
 function readJson<T>(workspacePath: string, name: string, fallback: T): T {
   try {
@@ -51,7 +51,7 @@ function readJson<T>(workspacePath: string, name: string, fallback: T): T {
 }
 
 function writeJson(workspacePath: string, name: string, data: unknown): void {
-  const dir = canopyDir(workspacePath);
+  const dir = chaperoneDir(workspacePath);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath(workspacePath, name), JSON.stringify(data, null, 2));
 }
@@ -232,7 +232,7 @@ export interface ProgressDoc {
 
 // An EMPTY map for a project with no progress tracking yet. We must NOT fabricate slices:
 // a fresh project honestly has none until the PM builds them by reading the project.
-// (Canopy's own dogfooding slices live in agent-company's real .canopy/progress.json, not
+// (Chaperone's own dogfooding slices live in agent-company's real .chaperone/progress.json, not
 // in a code seed that would pollute every other project — that was the bug.)
 const EMPTY_PROGRESS: ProgressDoc = {
   mvpGoal: '',

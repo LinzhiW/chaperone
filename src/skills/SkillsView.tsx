@@ -6,7 +6,7 @@
 // individual screens (WorkerLoadout), not here.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import type { Skill, SavedSet, Worker, RolePreset } from '../canopyTypes';
+import type { Skill, SavedSet, Worker, RolePreset } from '../chaperoneTypes';
 import { SkillsLibrary } from './SkillsLibrary';
 import { SkillImport } from './SkillImport';
 import { WorkerLoadout } from './WorkerLoadout';

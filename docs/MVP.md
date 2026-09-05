@@ -1,10 +1,10 @@
-# Canopy — MVP (PRD + MVP Map)
+# Chaperone — MVP (PRD + MVP Map)
 
 > The "where's the finish line and what's in scope" source of truth. Pairs with
 > `PROGRESS.md` (where are we) and `ACCEPTANCE.md` (can we call it done).
 > Operating model for the PM: `PM_OPERATING_MODEL.md`.
 
-## What Canopy is (MVP)
+## What Chaperone is (MVP)
 
 A provider-agnostic, GUI-first multi-agent orchestration platform for non-technical
 builders. The human is the **CEO**; the lead agent is the **PM**, who plans and
@@ -46,10 +46,10 @@ vague theme. Gear rises only as the foundation stabilizes (see `PM_OPERATING_MOD
 | **S11 Billing / subscription** 🔴CEO-decision | subscribe | Flat **subscription on the orchestration layer** (BYO-key, no token metering — see `DECISIONS.md`) | product-ready | Blocked on CEO: pricing + payment provider choice. Not started |
 
 Sequencing note: **S5 (L2 parallel) is the highest-value next step** — it's the first time
-Canopy does what a single agent can't, and it's the core differentiator. S7–S9 lean on code
+Chaperone does what a single agent can't, and it's the core differentiator. S7–S9 lean on code
 that already half-exists, so they're cheaper than they look.
 
-## Foundation Files (Canopy's own — see PROGRESS.md for the live manifest)
+## Foundation Files (Chaperone's own — see PROGRESS.md for the live manifest)
 `src/App.tsx`, `server/src/index.ts`, `server/src/persistence.ts`,
 `server/src/providers/*`. These are still changing → volatility **High** → we stay at
 **Level 1 / single active slice**.

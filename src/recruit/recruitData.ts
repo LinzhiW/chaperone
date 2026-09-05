@@ -4,9 +4,9 @@
 // backend (GET /api/role-presets). Skills come from GET /api/skills. The worker is
 // created via POST /api/team (server assigns the next W#).
 //
-// All API/type shapes follow docs/API_CONTRACT.md + src/canopyTypes.ts.
+// All API/type shapes follow docs/API_CONTRACT.md + src/chaperoneTypes.ts.
 
-import type { RolePreset, SavedSet, Skill, Worker } from '../canopyTypes';
+import type { RolePreset, SavedSet, Skill, Worker } from '../chaperoneTypes';
 
 export const API_BASE = 'http://localhost:3005';
 
