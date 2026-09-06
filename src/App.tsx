@@ -253,6 +253,37 @@ function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSe
 const NOT_WIRED = { opacity: 0.4, cursor: 'not-allowed' } as const;
 const NOT_WIRED_TITLE = 'Not built yet';
 
+/**
+ * Errors the user can fix themselves in Settings, split by what actually went
+ * wrong: nothing configured yet, versus a key the provider refused. Both lead to
+ * Settings; only one of them should say "add a key".
+ */
+type KeyProblem = 'missing' | 'rejected' | null;
+function keyProblem(msg?: string): KeyProblem {
+  const m = msg || '';
+  if (/api key missing/i.test(m)) return 'missing';
+  if (/not valid|invalid[_ ]?api|unauthor|permission denied|401|403|incorrect api key/i.test(m)) return 'rejected';
+  return null;
+}
+const isKeyError = (msg?: string) => keyProblem(msg) !== null;
+
+/**
+ * Provider SDK errors arrive as one long line of vendor prefix, URL and status
+ * code. Drop those first — a URL's dots break sentence splitting — then keep the
+ * clause that tells the user what to do.
+ */
+function tidyProviderError(msg?: string): string {
+  const cleaned = (msg || '')
+    .replace(/\s+/g, ' ')
+    .replace(/https?:\/\/\S+/g, '')          // URLs (and their dots)
+    .replace(/\[[^\]]*\]:?/g, '')            // [GoogleGenerativeAI Error], [400 Bad Request]
+    .replace(/^\s*Error fetching from\s*/i, '')
+    .replace(/\s*:\s*/g, ': ')
+    .trim();
+  const sentence = cleaned.match(/[^.]*(?:not valid|invalid|unauthorized|permission denied|incorrect api key)[^.]*\.?/i);
+  return (sentence ? sentence[0] : cleaned).replace(/^[:\s]+/, '').trim().slice(0, 200);
+}
+
 // ─── File tree ──────────────────────────────────────────────────────────────
 // The sidebar used to print one flat readdir with no sign of what had changed —
 // the thing you most want after workers have been running. This is a real nested
@@ -2036,7 +2067,15 @@ const App: React.FC = () => {
       if (d.ok) loadProvider();
     } catch {}
   };
+  // Load on mount too, not only when Settings opens: whether any provider has a
+  // key decides what the very first screen should say. Onboarding never asks for
+  // one, so without this the first sign of a missing key was a failed model call
+  // three steps in.
+  useEffect(() => { loadProvider(); }, []);
   useEffect(() => { if (showSettings) loadProvider(); }, [showSettings]);
+
+  const hasAnyKey = !providerInfo || providerInfo.available.some(p => p.ready);
+  const keyStateKnown = !!providerInfo;
 
   // Anthropic / OpenAI credentials are deliberately NOT kept in localStorage the
   // way googleKey is — they are write-only from the UI's side. You type a key, it
@@ -2866,6 +2905,11 @@ const App: React.FC = () => {
       setDraftModels({});
       setDraftCustom({ label: '', baseUrl: '', key: '', model: '' });
       loadProvider();
+      // A screen that stalled purely for want of a key can go now — making the
+      // user re-trigger the same step by hand is busywork.
+      const wp = config.projectPath || onbPath;
+      if (wp && scan.status === 'error' && isKeyError(scan.error)) runScan(wp);
+      if (wp && docsDraft.status === 'error' && isKeyError(docsDraft.error)) runDraftDocs(wp);
     } catch {}
     setSavingSettings(false);
     setShowSettings(false);
@@ -3136,6 +3180,23 @@ const App: React.FC = () => {
                 </p>
               </div>
 
+                {/* Onboarding never asks for a key, so without this the first sign
+                    of one missing was a failed model call three steps in. */}
+                {keyStateKnown && !hasAnyKey && (
+                  <div className="box" style={{ padding: '12px 14px', borderColor: 'var(--pm)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Add a model API key to get started</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+                        Chaperone runs on whichever model you bring — Claude, OpenAI or Gemini. You can open a project first, but the PM can't read it until there's a key.
+                      </div>
+                    </div>
+                    <button onClick={() => setShowSettings(true)}
+                      style={{ fontSize: 12, padding: '7px 14px', background: 'var(--pm)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      Open Settings
+                    </button>
+                  </div>
+                )}
+
               {/* Three entry tiles — order: Start from scratch / Open folder / Clone GitHub */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                 <div onClick={() => handleStartFromScratch()} className="box" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer', background: 'var(--paper)', borderColor: 'var(--pm)' }}>
@@ -3259,7 +3320,38 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {scan.status === 'error' && (
+                  {/* A missing key is a setup gap, not a failure to read the
+                      project, and "skip" leads nowhere — without a key nothing in
+                      this app works. Say what to do and open the place to do it. */}
+                  {scan.status === 'error' && isKeyError(scan.error) && (
+                    <div className="box" style={{ padding: '12px 14px', background: 'var(--paper)', maxWidth: 560, borderColor: 'var(--pm)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4, letterSpacing: 0.5 }}>
+                        {keyProblem(scan.error) === 'rejected' ? 'THAT KEY WAS REFUSED' : 'ADD A MODEL KEY TO CONTINUE'}
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                        {keyProblem(scan.error) === 'rejected'
+                          ? 'The provider rejected the key, so nothing was read. Check it in Settings, or switch to a different engine.'
+                          : 'Chaperone runs on whichever model you bring — Claude, OpenAI or Gemini. It needs one API key before the PM can read anything.'}
+                      </div>
+                      {keyProblem(scan.error) === 'rejected' && (
+                        <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
+                          {tidyProviderError(scan.error)}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                        <span onClick={() => setShowSettings(true)} className="branch-chip"
+                          style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px', background: 'var(--pm-soft)', borderColor: 'var(--pm)', color: 'var(--pm)', fontWeight: 600 }}>
+                          Open Settings
+                        </span>
+                        <span onClick={() => runScan(config.projectPath || onbPath)} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>Try again</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>
+                        Saving a key here retries on its own.
+                      </div>
+                    </div>
+                  )}
+
+                  {scan.status === 'error' && !isKeyError(scan.error) && (
                     <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560, borderColor: 'var(--reject, #b4544f)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--reject, #b4544f)', marginBottom: 4 }}>COULDN'T READ THE PROJECT</div>
                       <div style={{ fontSize: 13, lineHeight: 1.55 }}>{scan.error}</div>
