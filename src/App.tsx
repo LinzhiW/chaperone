@@ -3372,6 +3372,18 @@ const App: React.FC = () => {
             {/* One credential block per engine. Every engine you hold a key for
                 becomes selectable above — that is the whole BYO-model promise. */}
             <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>API KEYS</label>
+            {providerInfo && (
+              <div onClick={() => switchProvider('auto')}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '7px 10px', borderRadius: 6, cursor: 'pointer',
+                  border: `1.5px solid ${providerInfo.active === 'auto' ? 'var(--accent-pm)' : 'var(--border-default)'}`,
+                  background: providerInfo.active === 'auto' ? 'var(--pm-soft, rgba(74,111,165,0.12))' : 'transparent' }}>
+                <span style={{ fontSize: 10, width: 10, color: 'var(--accent-pm)' }}>{providerInfo.active === 'auto' ? '●' : ''}</span>
+                <span style={{ fontSize: 12.5, fontWeight: providerInfo.active === 'auto' ? 700 : 500 }}>Auto</span>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                  use whichever I have a key for{providerInfo.active === 'auto' ? ` — now ${providerInfo.current}` : ''}
+                </span>
+              </div>
+            )}
             {PROVIDER_FIELDS.map(f => {
               const info = providerInfo?.available.find(p => p.id === f.id);
               const ready = !!info?.ready;
@@ -3383,6 +3395,17 @@ const App: React.FC = () => {
                     <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
                       {ready ? 'KEY SET' : 'NO KEY'}
                     </span>
+                    {/* Choosing which provider runs belongs next to that provider,
+                        at the moment you finish setting it up — not in a separate
+                        list underneath repeating the same names. */}
+                    {ready && (providerInfo?.active === f.id ? (
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: 'var(--accent-pm)' }}>● IN USE</span>
+                    ) : (
+                      <button type="button" onClick={() => switchProvider(f.id)}
+                        style={{ fontSize: 10.5, padding: '3px 9px', borderRadius: 10, cursor: 'pointer', background: 'transparent', color: 'var(--accent-pm)', border: '1px solid var(--accent-pm)' }}>
+                        use this
+                      </button>
+                    ))}
                     {/* Opens in the system browser from the desktop build. */}
                     <a href={f.keyUrl} target="_blank" rel="noreferrer"
                       style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent-pm)', textDecoration: 'underline' }}>
@@ -3421,6 +3444,14 @@ const App: React.FC = () => {
                     <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
                       {ready ? 'READY' : 'NOT SET'}
                     </span>
+                    {ready && (providerInfo?.active === 'custom' ? (
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: 'var(--accent-pm)' }}>● IN USE</span>
+                    ) : (
+                      <button type="button" onClick={() => switchProvider('custom')}
+                        style={{ fontSize: 10.5, padding: '3px 9px', borderRadius: 10, cursor: 'pointer', background: 'transparent', color: 'var(--accent-pm)', border: '1px solid var(--accent-pm)' }}>
+                        use this
+                      </button>
+                    ))}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
                     Pick one to fill in its address, then paste a key.
@@ -3499,51 +3530,6 @@ const App: React.FC = () => {
                 </div>
               );
             })()}
-
-            {/* S7: model provider selection (BYO-key; adapters already exist) */}
-            {providerInfo && (
-              <div style={{ marginTop: 22 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>WHICH ONE YOU'RE USING NOW</label>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
-                    const active = providerInfo.active === p.id;
-                    return (
-                      <button key={p.id} disabled={!p.ready} onClick={() => switchProvider(p.id)}
-                        title={p.ready ? '' : 'No API key set'}
-                        style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, cursor: p.ready ? 'pointer' : 'not-allowed', opacity: p.ready ? 1 : 0.4, fontWeight: active ? 700 : 500, background: active ? 'var(--accent-pm)' : 'transparent', color: active ? '#fff' : 'var(--text-primary)', border: `1px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
-                        {p.id === 'auto' ? 'Auto' : p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Auto picks the first one you have a key for. You can also switch from the model name in the top bar.</div>
-              </div>
-            )}
-
-            {/* Moved out of a corner of the mission view. How much a worker may do
-                before it stops and asks is the most consequential choice here, and
-                it was the least discoverable thing in the app. */}
-            <div style={{ marginTop: 22 }}>
-              <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>HOW MUCH AGENTS MAY DO ALONE</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                {AUTONOMY_CHOICES.map(({ id, title, blurb }) => {
-                  const active = autonomyMode === id;
-                  return (
-                    <div key={id} onClick={() => setAutonomyMode(id)}
-                      style={{ padding: '9px 12px', borderRadius: 6, cursor: 'pointer',
-                        border: `1.5px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}`,
-                        background: active ? 'var(--pm-soft, rgba(74,111,165,0.12))' : 'transparent' }}>
-                      <div style={{ fontSize: 13, fontWeight: active ? 700 : 500 }}>{title}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted, var(--ink-2))', lineHeight: 1.5, marginTop: 2 }}>{blurb}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>
-                Applies to new work; a worker already running keeps the mode it started under.
-              </div>
-            </div>
-
 
            </div>
             <div style={{ display: 'flex', gap: 10, padding: '14px 28px 22px', borderTop: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
@@ -3648,7 +3634,7 @@ const App: React.FC = () => {
           <BottomBar
             usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
-            model={config.defaultModel}
+            model={providerInfo?.current || config.defaultModel}
             hitlPending={0}
             extra="no project · waiting for you to choose"
           />
@@ -3701,7 +3687,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={providerInfo?.current || config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -3817,7 +3803,7 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo?.current || config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
       {settingsModal}
       {usageModal}
@@ -3877,7 +3863,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={providerInfo?.current || config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -4004,7 +3990,7 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo?.current || config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
         </div>
       {settingsModal}
       {usageModal}
@@ -4032,7 +4018,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={providerInfo?.current || config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             {/* hideDocs: PM tabs only appear once user has approved workflow docs */}
@@ -4132,7 +4118,7 @@ const App: React.FC = () => {
           <BottomBar
             usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
-            model={config.defaultModel}
+            model={providerInfo?.current || config.defaultModel}
             hitlPending={0}
             extra={docsReady ? 'project ready · 0 missions · PM idle' : 'blank project · waiting for your first brief'}
           />
@@ -4196,7 +4182,7 @@ const App: React.FC = () => {
           })()}
           pending={totalHitl}
           branches={activeMission ? activeMission.assignments.length : 0}
-          model={config.defaultModel}
+          model={providerInfo?.current || config.defaultModel}
           startedAt={activeMission?.startedAt}
         />
 
@@ -4768,7 +4754,7 @@ const App: React.FC = () => {
         <BottomBar
           usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
           backendStatus={backendStatus}
-          model={config.defaultModel}
+          model={providerInfo?.current || config.defaultModel}
           hitlPending={totalHitl}
           extra={activeMission ? `mission · ${activeMission.assignments.length} workers · ${totalHitl} hitl pending` : `PM panel · ${missions.filter(m => m.status === 'running').length} mission running · ${totalHitl} hitl pending`}
         />
