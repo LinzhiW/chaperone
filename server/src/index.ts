@@ -439,7 +439,7 @@ app.get('/api/execute-mission', async (req, res) => {
 
   const sendEvent = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
   const apiKey = getApiKey();
-  if (!apiKey) { sendEvent('log', { log: '> [ERROR] API Key missing.' }); return res.end(); }
+  if (!apiKey) { sendEvent('log', { log: '> [ERROR] API key missing.' }); return res.end(); }
 
   // T5: auto git branch checkout
   if (branchName && workspacePath) {
@@ -543,7 +543,7 @@ app.post('/api/ceo/chat', async (req, res) => {
   const { message, history, files, clarifyAnswers, workspacePath } = req.body;
   const apiKey = getApiKey();
   const modelId = getModelId();
-  if (!apiKey) return res.status(400).json({ error: 'Key missing' });
+  if (!apiKey) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
 
   try {
     const fileList = files && files.length > 0 ? files.join(', ') : "None";
@@ -968,7 +968,7 @@ app.post('/api/project-review', async (req, res) => {
   let { workspacePath } = req.body;
   if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
   try {
     const readMaybe = (rels: string[], max = 4000) => {
@@ -1055,7 +1055,7 @@ app.post('/api/pm/plan', async (req, res) => {
   let { workspacePath, goal } = req.body || {};
   if (!workspacePath || !goal) return res.status(400).json({ error: 'Missing workspacePath or goal' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
 
   try {
@@ -1345,7 +1345,7 @@ app.post('/api/pm/progress-report', async (req, res) => {
   let { workspacePath } = req.body || {};
   if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
 
   const tree = walkTree(workspacePath, 600, 6);
@@ -1412,7 +1412,7 @@ app.post('/api/pm/checkpoint', async (req, res) => {
   let { workspacePath, history } = req.body || {};
   if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
 
   const transcript = Array.isArray(history)
@@ -1498,7 +1498,7 @@ app.post('/api/pm/audit', async (req, res) => {
   let { workspacePath } = req.body || {};
   if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
 
   const tree = walkTree(workspacePath, 600, 6);
@@ -1645,7 +1645,7 @@ app.post('/api/pm/l2-plan', async (req, res) => {
   let { workspacePath, slice } = req.body || {};
   if (!workspacePath || !slice) return res.status(400).json({ error: 'Missing workspacePath or slice' });
   if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
+  if (!getApiKey()) return res.status(400).json({ error: 'API key missing', code: 'no_api_key' });
   if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
 
   const tree = walkTree(workspacePath, 600, 6);

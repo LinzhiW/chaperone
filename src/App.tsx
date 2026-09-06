@@ -314,7 +314,7 @@ const NOT_WIRED_TITLE = 'Not built yet';
 type KeyProblem = 'missing' | 'rejected' | null;
 function keyProblem(msg?: string): KeyProblem {
   const m = msg || '';
-  if (/api key missing/i.test(m)) return 'missing';
+  if (/(api )?key missing|no[_ ]api[_ ]key|missing api key/i.test(m)) return 'missing';
   if (/not valid|invalid[_ ]?api|unauthor|permission denied|401|403|incorrect api key/i.test(m)) return 'rejected';
   return null;
 }
@@ -4171,6 +4171,40 @@ const App: React.FC = () => {
                     {pmMessages.slice(1).map((msg, i) => {
                       const isModel = msg.role === 'model';
                       const isArchiveMsg = isModel && msg.content.includes('Dev log.md');
+                      // A missing or refused key surfaced here as a raw "[ERROR] API
+                      // key missing" bubble — a dead end in the one place people
+                      // spend their time. It is the only error they can fix
+                      // themselves, so it gets the way to fix it.
+                      const keyIssue = isModel && msg.content.startsWith('[ERROR]') ? keyProblem(msg.content) : null;
+                      if (keyIssue) {
+                        return (
+                          <div key={i} style={{ alignSelf: 'flex-start', maxWidth: '82%' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
+                            <div className="box" style={{ background: 'var(--paper)', padding: '12px 14px', maxWidth: 580, borderColor: 'var(--pm)' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4, letterSpacing: 0.5 }}>
+                                {keyIssue === 'rejected' ? 'THAT KEY WAS REFUSED' : 'ADD A MODEL KEY TO CONTINUE'}
+                              </div>
+                              <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                                {keyIssue === 'rejected'
+                                  ? 'The provider rejected the key, so I could not run that. Check it in Settings, or switch to a different engine.'
+                                  : "I can't reach a model yet. Chaperone runs on whichever one you bring — add a key and I'll pick this back up."}
+                              </div>
+                              {keyIssue === 'rejected' && (
+                                <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
+                                  {tidyProviderError(msg.content)}
+                                </div>
+                              )}
+                              <div style={{ marginTop: 10 }}>
+                                <button onClick={() => setShowSettings(true)}
+                                  style={{ fontSize: 12, padding: '6px 14px', background: 'var(--pm)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>
+                                  Open Settings
+                                </button>
+                              </div>
+                              {keyIssue !== 'rejected' && <GetKeyLinks compact />}
+                            </div>
+                          </div>
+                        );
+                      }
                       return (
                         <div key={i} style={{ alignSelf: isModel ? 'flex-start' : 'flex-end', maxWidth: '82%' }}>
                           {isModel && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>}
