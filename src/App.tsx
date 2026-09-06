@@ -3401,7 +3401,7 @@ const App: React.FC = () => {
                     value={draftModels[f.id] || ''}
                     onChange={e => setDraftModel(f.id, e.target.value)}
                     style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '7px 12px', color: 'var(--text-muted)', marginTop: 6, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                    placeholder={`model — currently ${info?.label || f.defaultModel}`}
+                    placeholder={`which model — now ${info?.label || f.defaultModel}`}
                   />
                 </div>
               );
@@ -3417,13 +3417,14 @@ const App: React.FC = () => {
               return (
                 <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border-default)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>Custom (OpenAI-compatible)</span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Add another provider</span>
                     <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
                       {ready ? 'READY' : 'NOT SET'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 6, lineHeight: 1.5 }}>
                     Pick one to fill in its address, then paste a key.
+                    <span style={{ opacity: 0.75 }}> Anything not listed works too, as long as it offers an OpenAI-style API — most do.</span>
                   </div>
 
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -3465,7 +3466,7 @@ const App: React.FC = () => {
                       send people to models that no longer exist — ask the provider. */}
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
                     <input value={draftCustom.model} onChange={e => setCustom('model', e.target.value)}
-                      style={{ ...box, marginTop: 0, flex: 1 }} placeholder="model" />
+                      style={{ ...box, marginTop: 0, flex: 1 }} placeholder="which model at this provider" />
                     <button type="button" onClick={fetchCustomModels}
                       disabled={loadingModels || !draftCustom.baseUrl.trim() || !draftCustom.key.trim()}
                       title={!draftCustom.key.trim() ? 'paste a key first' : 'ask this provider which models your key can use'}
@@ -3502,7 +3503,7 @@ const App: React.FC = () => {
             {/* S7: model provider selection (BYO-key; adapters already exist) */}
             {providerInfo && (
               <div style={{ marginTop: 22 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>WHICH MODEL TO USE</label>
+                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>WHICH ONE YOU'RE USING NOW</label>
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                   {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
                     const active = providerInfo.active === p.id;
@@ -3515,7 +3516,7 @@ const App: React.FC = () => {
                     );
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Now using {providerInfo.current}. Auto picks the first one you have a key for.</div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Auto picks the first one you have a key for. You can also switch from the model name in the top bar.</div>
               </div>
             )}
 
