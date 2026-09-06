@@ -15,7 +15,8 @@
 
 import type { Skill, SavedSet, Worker, RolePreset } from '../chaperoneTypes';
 
-export const API_BASE = 'http://localhost:3005';
+export { API_BASE } from '../config';
+import { API_BASE } from '../config';
 
 // ─── Color assignment ──────────────────────────────────────────────────────
 // Skills come from the backend without colors; assign a stable warm-paper hue

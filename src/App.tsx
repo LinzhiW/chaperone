@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Worker as TeamWorker } from './chaperoneTypes';
+import { API_BASE, canPickFolder, pickFolder } from './config';
 import { SkillsView } from './skills';
 import RecruitModal from './recruit/RecruitModal';
 
@@ -48,11 +49,20 @@ interface Skill { id: number; name: string; source: string; category: string; de
 
 const WORKER_COLORS = ['#5d8aa8', '#87a36d', '#c98a5a', '#a86970', '#9b7ec8', '#6aab9e'];
 
+// The engines Settings can hold credentials for. Order matches the backend's
+// auto-selection priority in server/src/providers/index.ts. `defaultModel` is only
+// a placeholder hint — the backend owns the real default.
+const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string }[] = [
+  { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…', defaultModel: 'claude-opus-5' },
+  { id: 'openai', label: 'OpenAI', placeholder: 'sk-…', defaultModel: 'gpt-4o-mini' },
+  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash' },
+];
+
 // ─── Shared primitives — 1-to-1 port of wf-shared.jsx ───────────────────────
 
 /* Mission rail with NO project yet — dashed AC + dashed green ＋.
    1-to-1 port of EmptyMissionRail in wf-onboarding.jsx.                       */
-function EmptyMissionRail() {
+function EmptyMissionRail({ onSettings, onNewProject }: { onSettings?: () => void; onNewProject?: () => void }) {
   return (
     <div style={{
       width: 60, background: '#1a1816', borderRight: '1.5px solid var(--rule)',
@@ -63,17 +73,23 @@ function EmptyMissionRail() {
         width: 44, height: 44, borderRadius: 14, background: '#3a3a3a', color: '#888',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontWeight: 700, fontSize: 13, border: '1.5px dashed #555',
-      }}>AC</div>
+      }}>CH</div>
       <div style={{ width: 28, height: 1, background: 'rgba(255,255,255,0.08)' }} />
-      <div title="Open or create your first project" style={{
+      {/* Was decorative despite the tooltip promising an action, like the gear below. */}
+      <div onClick={onNewProject} title="Open or create your first project" style={{
         width: 44, height: 44, borderRadius: 22, border: '1.5px dashed #6e8b54',
         color: '#6e8b54', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 22, fontWeight: 300, boxShadow: '0 0 0 4px rgba(110,139,84,0.10)',
+        cursor: onNewProject ? 'pointer' : 'default',
       }}>＋</div>
       <div style={{ flex: 1 }} />
-      <div style={{
+      {/* Was decorative — no handler — which left a first-run user with no way to
+          reach Settings, and so no way to enter an Anthropic or OpenAI key before
+          opening a project (onboarding only ever asks for a Gemini key). */}
+      <div onClick={onSettings} title="Settings" style={{
         width: 36, height: 36, color: '#6e6a60', display: 'flex',
         alignItems: 'center', justifyContent: 'center', fontSize: 16,
+        cursor: onSettings ? 'pointer' : 'default',
       }}>⚙</div>
     </div>
   );
@@ -168,8 +184,8 @@ function HitlCard({ tool = 'run_shell', cmd = '', compact = false, onApprove, on
    - Dashed green ＋ at bottom for "new mission".
    - ⚙ at the very bottom.                                                     */
 const projectLabel = (p: string) => {
-  const name = p.split(/[\\/]/).filter(Boolean).pop() || 'AC';
-  return (name.match(/[a-zA-Z0-9]/g) || ['A', 'C']).slice(0, 2).join('').toUpperCase();
+  const name = p.split(/[\\/]/).filter(Boolean).pop() || 'Chaperone';
+  return (name.match(/[a-zA-Z0-9]/g) || ['C', 'H']).slice(0, 2).join('').toUpperCase();
 };
 
 function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSettings, onRemoveProject }: {
@@ -191,11 +207,14 @@ function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSe
       {projects.map(p => {
         const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
         const active = p === activePath;
+        // Right-click hands the project up to the parent, which asks for
+        // confirmation — window.confirm is unavailable in embedded contexts,
+        // same as window.prompt.
         return (
           <div key={p} title={`${name}${active ? ' (current)' : ' — click to switch'}\n${p}`}
             style={{ position: 'relative', width: 44, height: 44, flexShrink: 0 }}
             onClick={() => onSelectProject(p)}
-            onContextMenu={(e) => { e.preventDefault(); if (projects.length > 1 && window.confirm(`Close "${name}" from the rail? (does not delete files)`)) onRemoveProject(p); }}
+            onContextMenu={(e) => { e.preventDefault(); if (projects.length > 1) onRemoveProject(p); }}
           >
             {active && <div style={{ position: 'absolute', left: -10, top: 6, bottom: 6, width: 3, background: 'var(--paper)', borderRadius: '0 3px 3px 0' }} />}
             <div style={{
@@ -899,7 +918,7 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDi
   useEffect(() => {
     if (activeBranchTab === 'cross') { setBranchDiffText(''); return; }
     setBranchDiffText('… loading diff …');
-    fetch(`http://localhost:3005/api/diff?workspacePath=${encodeURIComponent(workspacePath)}&branch=${encodeURIComponent(activeBranchTab)}`)
+    fetch(`${API_BASE}/api/diff?workspacePath=${encodeURIComponent(workspacePath)}&branch=${encodeURIComponent(activeBranchTab)}`)
       .then(r => r.json())
       .then(d => setBranchDiffText(d.diff || '(no changes on this branch)'))
       .catch(() => setBranchDiffText('(diff unavailable — is the backend running?)'));
@@ -919,7 +938,7 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDi
           ).join('\n')}\n\n_Generated by Chaperone_`
         : '_Generated by Chaperone_';
       try {
-        const res = await fetch('http://localhost:3005/api/create-pr', {
+        const res = await fetch(`${API_BASE}/api/create-pr`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ workspacePath, branch, title: assignment.task, body }),
         });
@@ -1507,7 +1526,7 @@ function RealDocTab({ name, workspacePath }: { name: 'PRD' | 'SOP' | 'DevLog'; w
   useEffect(() => {
     if (!workspacePath) { setLoading(false); return; }
     setLoading(true); setEditing(false);
-    fetch(`http://localhost:3005/api/doc?workspacePath=${encodeURIComponent(workspacePath)}&name=${name}`)
+    fetch(`${API_BASE}/api/doc?workspacePath=${encodeURIComponent(workspacePath)}&name=${name}`)
       .then(r => r.json())
       .then(d => { setContent(d.content || ''); setFoundPath(d.found ? d.path : null); })
       .catch(() => {})
@@ -1517,7 +1536,7 @@ function RealDocTab({ name, workspacePath }: { name: 'PRD' | 'SOP' | 'DevLog'; w
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch('http://localhost:3005/api/doc', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspacePath, name, content: draft }) });
+      const r = await fetch(`${API_BASE}/api/doc`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspacePath, name, content: draft }) });
       const d = await r.json();
       if (d.ok) { setContent(draft); setFoundPath(d.path); setEditing(false); }
     } finally { setSaving(false); }
@@ -1574,7 +1593,7 @@ function PmPlanPanel({ workspacePath }: { workspacePath: string }) {
 
   useEffect(() => {
     if (!workspacePath) return;
-    fetch(`http://localhost:3005/api/pm/plan?workspacePath=${encodeURIComponent(workspacePath)}`)
+    fetch(`${API_BASE}/api/pm/plan?workspacePath=${encodeURIComponent(workspacePath)}`)
       .then(r => r.json())
       .then(d => { if (d && d.plan) { setRecord(d); setGoal(d.goal || ''); } })
       .catch(() => {});
@@ -1584,7 +1603,7 @@ function PmPlanPanel({ workspacePath }: { workspacePath: string }) {
     if (!goal.trim() || loading) return;
     setLoading(true); setError(null);
     try {
-      const r = await fetch('http://localhost:3005/api/pm/plan', {
+      const r = await fetch(`${API_BASE}/api/pm/plan`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath, goal: goal.trim() }),
       });
@@ -1725,7 +1744,7 @@ function ProgressBoard({ workspacePath }: { workspacePath: string }) {
 
   const load = () => {
     if (!workspacePath) return;
-    fetch(`http://localhost:3005/api/pm/progress?workspacePath=${encodeURIComponent(workspacePath)}`)
+    fetch(`${API_BASE}/api/pm/progress?workspacePath=${encodeURIComponent(workspacePath)}`)
       .then(r => r.json()).then(d => { if (d && d.slices) setDoc(d); }).catch(() => {});
   };
   useEffect(() => { load(); }, [workspacePath]);
@@ -1910,12 +1929,12 @@ const App: React.FC = () => {
   // S7: provider selection state.
   const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
   const loadProvider = () => {
-    fetch('http://localhost:3005/api/provider').then(r => r.json())
+    fetch(`${API_BASE}/api/provider`).then(r => r.json())
       .then(d => { if (d.available) setProviderInfo(d); }).catch(() => {});
   };
   const switchProvider = async (id: string) => {
     try {
-      const res = await fetch('http://localhost:3005/api/provider', {
+      const res = await fetch(`${API_BASE}/api/provider`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: id }),
       });
@@ -1924,19 +1943,85 @@ const App: React.FC = () => {
     } catch {}
   };
   useEffect(() => { if (showSettings) loadProvider(); }, [showSettings]);
+
+  // Anthropic / OpenAI credentials are deliberately NOT kept in localStorage the
+  // way googleKey is — they are write-only from the UI's side. You type a key, it
+  // goes to the backend's .env, and the field clears; whether a provider has a key
+  // is read back from /api/provider (`ready`), never the secret itself.
+  const [draftKeys, setDraftKeys] = useState<Record<string, string>>({});
+  const [draftModels, setDraftModels] = useState<Record<string, string>>({});
+  const [savingSettings, setSavingSettings] = useState(false);
+  const setDraftKey = (id: string, v: string) => setDraftKeys(p => ({ ...p, [id]: v }));
+  const setDraftModel = (id: string, v: string) => setDraftModels(p => ({ ...p, [id]: v }));
+
+  // The one user-defined endpoint. Same write-only handling as the keys above.
+  const [draftCustom, setDraftCustom] = useState<{ label: string; baseUrl: string; key: string; model: string }>(
+    { label: '', baseUrl: '', key: '', model: '' },
+  );
+  const setCustom = (k: 'label' | 'baseUrl' | 'key' | 'model', v: string) =>
+    setDraftCustom(p => ({ ...p, [k]: v }));
+
+  // In-app replacement for window.prompt / window.confirm. Those are unavailable
+  // in embedded contexts — an embedded viewer throws "prompt() is not supported",
+  // so every button that opened one (all three ways into a project) did nothing at
+  // all. They also can't be styled to match the rest of the app.
+  type AskState = {
+    title: string;
+    hint?: string;
+    placeholder?: string;
+    confirmLabel?: string;
+    danger?: boolean;
+    withInput: boolean;
+    onConfirm: (value: string) => void;
+  };
+  const [ask, setAsk] = useState<AskState | null>(null);
+  const [askValue, setAskValue] = useState('');
+
+  /** Ask for a line of text. `onConfirm` only fires on a non-empty value. */
+  const askForText = (o: Omit<AskState, 'withInput'> & { initial?: string }) => {
+    setAskValue(o.initial || '');
+    setAsk({ ...o, withInput: true });
+  };
+  /** Ask a yes/no question. */
+  const askToConfirm = (o: Omit<AskState, 'withInput' | 'onConfirm'> & { onConfirm: () => void }) => {
+    setAskValue('');
+    setAsk({ ...o, withInput: false, onConfirm: () => o.onConfirm() });
+  };
+  /**
+   * Ask for a folder. On the desktop build this is the OS picker, so nobody types
+   * a path; in a browser, where a real path is unknowable, it falls back to the
+   * text modal. Same call site either way.
+   */
+  const askForFolder = async (o: Omit<AskState, 'withInput'> & { initial?: string }) => {
+    if (canPickFolder()) {
+      const picked = await pickFolder({ title: o.title, defaultPath: o.initial });
+      if (picked) o.onConfirm(picked);
+      return;
+    }
+    askForText(o);
+  };
+
+  const closeAsk = () => setAsk(null);
+  const submitAsk = () => {
+    if (!ask) return;
+    const v = askValue.trim();
+    if (ask.withInput && !v) return;   // nothing typed — same as cancelling
+    setAsk(null);
+    ask.onConfirm(v);
+  };
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    fetch('http://localhost:3005/api/status')
+    fetch(`${API_BASE}/api/status`)
       .then(res => res.ok ? setBackendStatus('online') : setBackendStatus('offline'))
       .catch(() => setBackendStatus('offline'));
   }, []);
 
   useEffect(() => {
     if (backendStatus !== 'online') return;
-    fetch('http://localhost:3005/api/skills')
+    fetch(`${API_BASE}/api/skills`)
       .then(r => r.json())
       .then(data => {
         if (data.skills) setSkills(data.skills.map((s: any, i: number) => ({
@@ -1949,7 +2034,7 @@ const App: React.FC = () => {
   // Load recruited team from backend persistence
   useEffect(() => {
     if (backendStatus !== 'online' || !config.projectPath) return;
-    fetch(`http://localhost:3005/api/team?workspacePath=${encodeURIComponent(config.projectPath)}`)
+    fetch(`${API_BASE}/api/team?workspacePath=${encodeURIComponent(config.projectPath)}`)
       .then(r => r.json())
       .then(d => { if (Array.isArray(d.workers)) setTeam(d.workers); })
       .catch(() => {});
@@ -1973,7 +2058,7 @@ const App: React.FC = () => {
     const poll = async () => {
       try {
         const res = await fetch(
-          `http://localhost:3005/api/branch-status?workspacePath=${encodeURIComponent(config.projectPath)}&branches=${encodeURIComponent(JSON.stringify(branches))}`
+          `${API_BASE}/api/branch-status?workspacePath=${encodeURIComponent(config.projectPath)}&branches=${encodeURIComponent(JSON.stringify(branches))}`
         );
         const data = await res.json();
         if (data.branches) setBranchStats(data.branches);
@@ -2006,7 +2091,7 @@ const App: React.FC = () => {
   const refreshFiles = async () => {
     setIsLoadingFiles(true);
     try {
-      const res = await fetch(`http://localhost:3005/api/files?path=${encodeURIComponent(config.projectPath)}`);
+      const res = await fetch(`${API_BASE}/api/files?path=${encodeURIComponent(config.projectPath)}`);
       const data = await res.json();
       if (data.files) setRealFiles(data.files);
     } finally { setIsLoadingFiles(false); }
@@ -2038,12 +2123,17 @@ const App: React.FC = () => {
     }));
     setActiveView('pm'); setActivePmTab('chat'); setPmScreen('idle'); setPendingAssignments([]);
     startedWorkersRef.current.clear();
-    fetch('http://localhost:3005/api/init-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: target }) }).catch(() => {});
+    fetch(`${API_BASE}/api/init-project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: target }) }).catch(() => {});
   };
 
   const addProject = () => {
-    const p = window.prompt('Open / add a project folder (full path)\ne.g. /Users/you/code/my-app  or  C:\\Users\\you\\code\\my-app', '');
-    if (p && p.trim()) switchProject(p.trim());
+    askForFolder({
+      title: 'Open or add a project',
+      hint: 'Full path to the folder.\ne.g. /Users/you/code/my-app   or   C:\\Users\\you\\code\\my-app',
+      placeholder: 'path to project folder',
+      confirmLabel: 'Open',
+      onConfirm: p => switchProject(p),
+    });
   };
 
   const removeProject = (target: string) => {
@@ -2061,6 +2151,17 @@ const App: React.FC = () => {
     }
   };
 
+  const confirmRemoveProject = (target: string) => {
+    const name = target.split(/[\\/]/).filter(Boolean).pop() || target;
+    askToConfirm({
+      title: `Close "${name}"?`,
+      hint: 'Removes it from the rail only. Nothing on disk is deleted.',
+      confirmLabel: 'Close',
+      danger: true,
+      onConfirm: () => removeProject(target),
+    });
+  };
+
   const sendPmMessage = async (overrideText?: string) => {
     const text = (overrideText ?? pmInput).trim();
     if (!text || isPmThinking) return;
@@ -2074,7 +2175,7 @@ const App: React.FC = () => {
         .filter((_, i) => i > 0)
         .map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] }));
 
-      const res = await fetch('http://localhost:3005/api/ceo/chat', {
+      const res = await fetch(`${API_BASE}/api/ceo/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, history: apiHistory, files: realFiles, workspacePath: config.projectPath }),
@@ -2121,7 +2222,7 @@ const App: React.FC = () => {
     setPmMessages(prev => [...prev, { role: 'user', content: zh ? '看看目前的项目进展。' : 'Check the current project progress.' }]);
     setIsPmThinking(true);
     try {
-      const res = await fetch('http://localhost:3005/api/pm/progress-report', {
+      const res = await fetch(`${API_BASE}/api/pm/progress-report`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, lang: zh ? 'zh' : '' }),
       });
@@ -2148,7 +2249,7 @@ const App: React.FC = () => {
         m => m.role === 'user' && m.content && !m.content.startsWith('Make a parallelization')
       )?.content || '';
       const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
-      const res = await fetch('http://localhost:3005/api/pm/audit', {
+      const res = await fetch(`${API_BASE}/api/pm/audit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, lang }),
       });
@@ -2175,7 +2276,7 @@ const App: React.FC = () => {
     setPmMessages(prev => [...prev, { role: 'user', content: zh ? `把这条 slice 拆成 L2 分层并行方案：${slice}` : `Plan L2 parallel work for: ${slice}` }]);
     setIsPmThinking(true);
     try {
-      const res = await fetch('http://localhost:3005/api/pm/l2-plan', {
+      const res = await fetch(`${API_BASE}/api/pm/l2-plan`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, slice }),
       });
@@ -2210,7 +2311,7 @@ const App: React.FC = () => {
       )?.content || '';
       const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
       // Agentic, read-only: the PM explores the repo itself with read tools.
-      const res = await fetch('http://localhost:3005/api/pm/explore', {
+      const res = await fetch(`${API_BASE}/api/pm/explore`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, lang }),
       });
@@ -2279,7 +2380,7 @@ const App: React.FC = () => {
     try {
       const lastTyped = [...pmMessages].reverse().find(m => m.role === 'user' && m.content)?.content || '';
       const lang = /[一-鿿぀-ヿ가-힯]/.test(lastTyped) ? 'zh' : '';
-      const res = await fetch('http://localhost:3005/api/pm/checkpoint', {
+      const res = await fetch(`${API_BASE}/api/pm/checkpoint`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, history: pmMessages, lang }),
       });
@@ -2331,7 +2432,7 @@ const App: React.FC = () => {
       skills: JSON.stringify(assignment.skillLoadout),
       branchName: assignment.branchName,
     });
-    const es = new EventSource(`http://localhost:3005/api/execute-mission?${qs}`);
+    const es = new EventSource(`${API_BASE}/api/execute-mission?${qs}`);
     es.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
@@ -2342,7 +2443,7 @@ const App: React.FC = () => {
         const auto = mode === 'auto' || (mode === 'edits' && data.tool === 'read_file');
         if (auto) {
           updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [AUTO-APPROVED · ${mode}] ${data.tool}`] }));
-          fetch('http://localhost:3005/api/approve-action', {
+          fetch(`${API_BASE}/api/approve-action`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ taskId: assignmentId, approved: true }),
           }).catch(() => {});
@@ -2357,7 +2458,7 @@ const App: React.FC = () => {
 
   const approveAction = async (missionId: string, assignmentId: number, approved: boolean) => {
     updateAssignment(missionId, assignmentId, { pendingAction: undefined });
-    await fetch('http://localhost:3005/api/approve-action', {
+    await fetch(`${API_BASE}/api/approve-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: assignmentId, approved }),
@@ -2381,7 +2482,7 @@ const App: React.FC = () => {
     setNudgeInputs(prev => ({ ...prev, [assignmentId]: '' }));
     updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [YOU] ${message}`] }));
     try {
-      const res = await fetch(`http://localhost:3005/api/panel/${assignmentId}/nudge`, {
+      const res = await fetch(`${API_BASE}/api/panel/${assignmentId}/nudge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
@@ -2408,7 +2509,7 @@ const App: React.FC = () => {
       branches: JSON.stringify(branches),
       tasks: JSON.stringify(tasks),
     });
-    const es = new EventSource(`http://localhost:3005/api/reviewer?${qs}`);
+    const es = new EventSource(`${API_BASE}/api/reviewer?${qs}`);
     es.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
@@ -2428,7 +2529,7 @@ const App: React.FC = () => {
   const viewDiff = async (branch: string) => {
     setBranchDiff({ branch, loading: true, diff: '', files: [], base: '' });
     try {
-      const res = await fetch(`http://localhost:3005/api/diff?workspacePath=${encodeURIComponent(config.projectPath)}&branch=${encodeURIComponent(branch)}`);
+      const res = await fetch(`${API_BASE}/api/diff?workspacePath=${encodeURIComponent(config.projectPath)}&branch=${encodeURIComponent(branch)}`);
       const data = await res.json();
       if (data.error) { setBranchDiff({ branch, loading: false, diff: `[ERROR] ${data.error}`, files: [], base: '' }); return; }
       setBranchDiff({ branch, loading: false, diff: data.diff || '', files: data.files || [], base: data.base || '' });
@@ -2441,7 +2542,7 @@ const App: React.FC = () => {
   const acceptAndMerge = async (missionId: string, branch: string) => {
     setMergeState({ branch, status: 'merging', message: '' });
     try {
-      const res = await fetch('http://localhost:3005/api/merge', {
+      const res = await fetch(`${API_BASE}/api/merge`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath: config.projectPath, branch }),
       });
@@ -2485,13 +2586,13 @@ const App: React.FC = () => {
     setConfig(newConfig);
     setDocsReady(false);
     setOnboardingPhase('ready');
-    fetch('http://localhost:3005/api/init-project', {
+    fetch(`${API_BASE}/api/init-project`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectPath: trimmed }),
     }).catch(() => {});
     if (key && key.trim() && key.trim() !== config.googleKey) {
-      fetch('http://localhost:3005/api/config', {
+      fetch(`${API_BASE}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ googleKey: key.trim() }),
@@ -2500,8 +2601,13 @@ const App: React.FC = () => {
   };
 
   const handleStartFromScratch = () => {
-    const p = window.prompt('Where should I create your new project?\n(I will mkdir if needed and create .chaperone/ inside)\ne.g. /Users/you/code/new-project  or  C:\\Users\\you\\code\\new-project', '');
-    if (p && p.trim()) enterProject(p, onbKey);
+    askForFolder({
+      title: 'Where should I create your new project?',
+      hint: 'The folder is created if it does not exist, with a .chaperone/ inside it.\ne.g. /Users/you/code/new-project   or   C:\\Users\\you\\code\\new-project',
+      placeholder: 'path for the new project',
+      confirmLabel: 'Create',
+      onConfirm: p => enterProject(p, onbKey),
+    });
   };
 
   const handleReadyFirstMessage = (text: string) => {
@@ -2514,7 +2620,7 @@ const App: React.FC = () => {
     if (!addSkillName.trim() || !addSkillContent.trim()) return;
     setIsAddingSkill(true);
     try {
-      await fetch('http://localhost:3005/api/add-skill', {
+      await fetch(`${API_BASE}/api/add-skill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: addSkillName.trim(), content: addSkillContent.trim() }),
@@ -2522,7 +2628,7 @@ const App: React.FC = () => {
       setShowAddSkill(false);
       setAddSkillName('');
       setAddSkillContent('');
-      const res = await fetch('http://localhost:3005/api/skills');
+      const res = await fetch(`${API_BASE}/api/skills`);
       const data = await res.json();
       if (data.skills) setSkills(data.skills.map((s: any, i: number) => ({
         id: i, name: s.name, source: 'Local', category: 'Universal', description: s.description,
@@ -2532,11 +2638,37 @@ const App: React.FC = () => {
   };
 
   const saveSettings = async () => {
-    await fetch('http://localhost:3005/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ googleKey: config.googleKey }),
-    });
+    // Send only what the user actually filled in — the backend merges into .env
+    // and leaves every other variable alone, so a blank field never clears a key.
+    const payload: Record<string, string> = {};
+    if (config.googleKey?.trim()) payload.googleKey = config.googleKey.trim();
+    if (draftKeys.claude?.trim()) payload.anthropicKey = draftKeys.claude.trim();
+    if (draftKeys.openai?.trim()) payload.openaiKey = draftKeys.openai.trim();
+    if (draftModels.gemini?.trim()) payload.geminiModel = draftModels.gemini.trim();
+    if (draftModels.claude?.trim()) payload.anthropicModel = draftModels.claude.trim();
+    if (draftModels.openai?.trim()) payload.openaiModel = draftModels.openai.trim();
+    if (draftCustom.key.trim()) payload.customKey = draftCustom.key.trim();
+    if (draftCustom.baseUrl.trim()) payload.customBaseUrl = draftCustom.baseUrl.trim();
+    if (draftCustom.model.trim()) payload.customModel = draftCustom.model.trim();
+    if (draftCustom.label.trim()) payload.customLabel = draftCustom.label.trim();
+
+    if (Object.keys(payload).length === 0) { setShowSettings(false); return; }
+
+    setSavingSettings(true);
+    try {
+      await fetch(`${API_BASE}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      // Drop the plaintext secrets from memory and re-read which providers are
+      // now usable, so the engine buttons light up without a reload.
+      setDraftKeys({});
+      setDraftModels({});
+      setDraftCustom({ label: '', baseUrl: '', key: '', model: '' });
+      loadProvider();
+    } catch {}
+    setSavingSettings(false);
     setShowSettings(false);
   };
 
@@ -2551,19 +2683,174 @@ const App: React.FC = () => {
   // ── M1 · Onboarding Screen 0a · Welcome (no project) ──────────────────────
   // 1-to-1 port of Onboarding_Welcome in wf-onboarding.jsx, with tiles
   // reordered per user: Start from scratch / Open folder / Clone GitHub.
+  // ── Settings Modal ──
+  // Defined before the onboarding early-returns below so every phase can render
+  // it. It used to live only in the final return, which meant clicking the gear
+  // before a project was open set the flag but drew nothing — leaving a user whose
+  // only key is Anthropic or OpenAI with no way in (onboarding asks for Gemini).
+  // ── Prompt / confirm modal ──
+  const askModal = ask && (
+    <div
+      onClick={closeAsk}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: 460, background: 'var(--bg-elevated)', borderRadius: 10, padding: '26px 26px 22px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default)' }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: ask.hint ? 6 : 16 }}>{ask.title}</div>
+        {ask.hint && (
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 16, whiteSpace: 'pre-line' }}>{ask.hint}</div>
+        )}
+        {ask.withInput && (
+          <input
+            autoFocus
+            value={askValue}
+            onChange={e => setAskValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submitAsk();
+              if (e.key === 'Escape') closeAsk();
+            }}
+            placeholder={ask.placeholder}
+            style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '11px 14px', color: 'var(--text-primary)', borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}
+          />
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button
+            onClick={submitAsk}
+            disabled={ask.withInput && !askValue.trim()}
+            style={{ flex: 1, background: ask.danger ? 'var(--reject, #b4544f)' : 'var(--accent-pm)', color: '#fff', border: 'none', padding: 11, borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: (ask.withInput && !askValue.trim()) ? 'not-allowed' : 'pointer', opacity: (ask.withInput && !askValue.trim()) ? 0.45 : 1 }}
+          >
+            {ask.confirmLabel || 'OK'}
+          </button>
+          <button
+            onClick={closeAsk}
+            style={{ padding: '11px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const settingsModal = showSettings && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ width: 520, maxHeight: '88vh', overflowY: 'auto', background: 'var(--bg-elevated)', borderRadius: 10, padding: '28px 28px 24px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default)' }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Settings</div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 20 }}>
+              Keys are written to the backend's <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>.env</code> and never leave your machine.
+            </div>
+
+            {/* One credential block per engine. Every engine you hold a key for
+                becomes selectable above — that is the whole BYO-model promise. */}
+            <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>API KEYS</label>
+            {PROVIDER_FIELDS.map(f => {
+              const info = providerInfo?.available.find(p => p.id === f.id);
+              const ready = !!info?.ready;
+              const isGemini = f.id === 'gemini';
+              return (
+                <div key={f.id} style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{f.label}</span>
+                    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
+                      {ready ? 'KEY SET' : 'NO KEY'}
+                    </span>
+                  </div>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={isGemini ? config.googleKey : (draftKeys[f.id] || '')}
+                    onChange={e => isGemini ? setConfig({ ...config, googleKey: e.target.value }) : setDraftKey(f.id, e.target.value)}
+                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '9px 12px', color: 'var(--text-primary)', borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
+                    placeholder={ready ? '•••••••••••  (leave blank to keep)' : f.placeholder}
+                  />
+                  <input
+                    value={draftModels[f.id] || ''}
+                    onChange={e => setDraftModel(f.id, e.target.value)}
+                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '7px 12px', color: 'var(--text-muted)', marginTop: 6, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                    placeholder={`model — currently ${info?.label || f.defaultModel}`}
+                  />
+                </div>
+              );
+            })}
+
+            {/* One slot for any OpenAI-compatible endpoint. Most providers outside
+                the big three — DeepSeek, Kimi, GLM, Qwen, OpenRouter, a local
+                Ollama — speak that dialect, so a base URL is all it takes. */}
+            {(() => {
+              const info = providerInfo?.available.find(p => p.id === 'custom');
+              const ready = !!info?.ready;
+              const box: React.CSSProperties = { width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '8px 12px', color: 'var(--text-primary)', marginTop: 6, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 };
+              return (
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border-default)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Custom (OpenAI-compatible)</span>
+                    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
+                      {ready ? 'READY' : 'NOT SET'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>
+                    DeepSeek, Kimi, GLM, Qwen, OpenRouter, or a local Ollama / vLLM server. Needs all four fields.
+                  </div>
+                  <input value={draftCustom.label} onChange={e => setCustom('label', e.target.value)}
+                    style={box} placeholder={ready ? `name — currently ${info?.label}` : 'name — e.g. DeepSeek'} />
+                  <input value={draftCustom.baseUrl} onChange={e => setCustom('baseUrl', e.target.value)}
+                    style={box} placeholder="base URL — e.g. https://api.deepseek.com/v1" />
+                  <input type="password" autoComplete="off" value={draftCustom.key} onChange={e => setCustom('key', e.target.value)}
+                    style={box} placeholder={ready ? '•••••••••••  (leave blank to keep)' : 'API key'} />
+                  <input value={draftCustom.model} onChange={e => setCustom('model', e.target.value)}
+                    style={box} placeholder="model — e.g. deepseek-chat" />
+                </div>
+              );
+            })()}
+
+            {/* S7: model provider selection (BYO-key; adapters already exist) */}
+            {providerInfo && (
+              <div style={{ marginTop: 22 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>MODEL ENGINE</label>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
+                    const active = providerInfo.active === p.id;
+                    return (
+                      <button key={p.id} disabled={!p.ready} onClick={() => switchProvider(p.id)}
+                        title={p.ready ? '' : 'No API key set'}
+                        style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, cursor: p.ready ? 'pointer' : 'not-allowed', opacity: p.ready ? 1 : 0.4, fontWeight: active ? 700 : 500, background: active ? 'var(--accent-pm)' : 'transparent', color: active ? '#fff' : 'var(--text-primary)', border: `1px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
+                        {p.id === 'auto' ? 'Auto' : p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Active: {providerInfo.current} · greyed out = add that key below, then Save</div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button onClick={saveSettings} disabled={savingSettings} style={{ flex: 1, background: 'var(--accent-pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, cursor: savingSettings ? 'wait' : 'pointer', opacity: savingSettings ? 0.6 : 1, fontSize: 14 }}>{savingSettings ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => setShowSettings(false)} style={{ padding: '12px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+  );
+
   if (onboardingPhase === 'welcome') {
     const onChooseFolder = () => {
-      const p = window.prompt('Enter project workspace path\ne.g. /Users/you/code/my-app  or  C:\\Users\\you\\code\\my-app', onbPath || '');
-      if (p && p.trim()) {
-        const trimmed = p.trim();
-        setOnbPath(trimmed);
-        setConfig({ ...config, projectPath: trimmed });
-        setOnboardingPhase('scan');
-      }
+      askForFolder({
+        title: 'Open a local folder',
+        hint: 'Full path to the repo you want the PM to scan.\ne.g. /Users/you/code/my-app   or   C:\\Users\\you\\code\\my-app',
+        placeholder: 'path to project folder',
+        initial: onbPath || '',
+        confirmLabel: 'Open',
+        onConfirm: trimmed => {
+          setOnbPath(trimmed);
+          setConfig({ ...config, projectPath: trimmed });
+          setOnboardingPhase('scan');
+        },
+      });
     };
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
-        <EmptyMissionRail />
+        <EmptyMissionRail onSettings={() => setShowSettings(true)} onNewProject={addProject} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <div className="wf-topbar">
             <div style={{ fontWeight: 600, fontSize: 14 }}>Chaperone</div>
@@ -2626,6 +2913,8 @@ const App: React.FC = () => {
             extra="no project · waiting for you to choose"
           />
         </div>
+      {settingsModal}
+      {askModal}
       </div>
     );
   }
@@ -2650,7 +2939,7 @@ const App: React.FC = () => {
           activePath={config.projectPath}
           onSelectProject={switchProject}
           onNewProject={addProject}
-          onRemoveProject={removeProject}
+          onRemoveProject={confirmRemoveProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2721,6 +3010,8 @@ const App: React.FC = () => {
           </div>
           <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
+      {settingsModal}
+      {askModal}
       </div>
     );
   }
@@ -2761,7 +3052,7 @@ const App: React.FC = () => {
           activePath={config.projectPath}
           onSelectProject={switchProject}
           onNewProject={addProject}
-          onRemoveProject={removeProject}
+          onRemoveProject={confirmRemoveProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2837,6 +3128,8 @@ const App: React.FC = () => {
           </div>
           <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={1} extra={`PM · drafting ${currentDoc} · awaiting approval · ${docsStep + 1} of ${docList.length}`} />
         </div>
+      {settingsModal}
+      {askModal}
       </div>
     );
   }
@@ -2854,7 +3147,7 @@ const App: React.FC = () => {
           activePath={config.projectPath}
           onSelectProject={switchProject}
           onNewProject={addProject}
-          onRemoveProject={removeProject}
+          onRemoveProject={confirmRemoveProject}
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2962,6 +3255,8 @@ const App: React.FC = () => {
             extra={docsReady ? 'project ready · 0 missions · PM idle' : 'blank project · waiting for your first brief'}
           />
         </div>
+      {settingsModal}
+      {askModal}
       </div>
     );
   }
@@ -2974,7 +3269,7 @@ const App: React.FC = () => {
         activePath={config.projectPath}
         onSelectProject={switchProject}
         onNewProject={addProject}
-        onRemoveProject={removeProject}
+        onRemoveProject={confirmRemoveProject}
         onSettings={() => setShowSettings(true)}
       />
 
@@ -3631,48 +3926,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* ── Settings Modal ── */}
-      {showSettings && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ width: 460, background: 'var(--bg-elevated)', borderRadius: 10, padding: '28px 28px 24px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default)' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Settings</div>
-            <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>GEMINI API KEY</label>
-            <input
-              type="password"
-              value={config.googleKey}
-              onChange={e => setConfig({ ...config, googleKey: e.target.value })}
-              style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '11px 14px', color: 'var(--text-primary)', marginTop: 8, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}
-              placeholder="AIza…"
-            />
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 5 }}>Saved locally to .env file.</div>
-
-            {/* S7: model provider selection (BYO-key; adapters already exist) */}
-            {providerInfo && (
-              <div style={{ marginTop: 22 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>MODEL ENGINE</label>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
-                    const active = providerInfo.active === p.id;
-                    return (
-                      <button key={p.id} disabled={!p.ready} onClick={() => switchProvider(p.id)}
-                        title={p.ready ? '' : 'No API key set'}
-                        style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, cursor: p.ready ? 'pointer' : 'not-allowed', opacity: p.ready ? 1 : 0.4, fontWeight: active ? 700 : 500, background: active ? 'var(--accent-pm)' : 'transparent', color: active ? '#fff' : 'var(--text-primary)', border: `1px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
-                        {p.id === 'auto' ? 'Auto' : p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Active: {providerInfo.current} · greyed = no key</div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-              <button onClick={saveSettings} style={{ flex: 1, background: 'var(--accent-pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>Save</button>
-              <button onClick={() => setShowSettings(false)} style={{ padding: '12px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {settingsModal}
+      {askModal}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

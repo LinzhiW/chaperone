@@ -8,7 +8,8 @@
 
 import type { RolePreset, SavedSet, Skill, Worker } from '../chaperoneTypes';
 
-export const API_BASE = 'http://localhost:3005';
+export { API_BASE } from '../config';
+import { API_BASE } from '../config';
 
 // ── Local fallbacks (used only when a fetch fails / returns empty) ───────────
 // Mirrors ROLE_PRESETS in .design/agent-company/project/wf-skills-data.jsx so the
