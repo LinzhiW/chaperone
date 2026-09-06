@@ -5,6 +5,8 @@ node_modules/
 # Build output
 dist/
 build/
+# electron-builder output
+release/
 
 # Vite cache
 .vite/
