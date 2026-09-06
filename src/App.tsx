@@ -538,9 +538,19 @@ function Sidebar({
 }
 
 /* TopBar — mission title + pending/branches/cost chips on the right. */
-function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', startedAt }: {
+function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', startedAt, providerInfo, onSwitchProvider, onOpenSettings }: {
   title: string; pending?: number; branches?: number; model?: string; startedAt?: string;
+  providerInfo?: { active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null;
+  onSwitchProvider?: (id: string) => void;
+  onOpenSettings?: () => void;
 }) {
+  // The model was shown here but could only be changed three clicks deep in
+  // Settings — an odd place for the one setting you might want to change between
+  // one task and the next. The chip that names it now changes it.
+  const [open, setOpen] = useState(false);
+  const canSwitch = !!(providerInfo && onSwitchProvider);
+  const ready = providerInfo?.available.filter(p => p.ready) || [];
+
   return (
     <div className="wf-topbar">
       <div className="mission">
@@ -554,7 +564,47 @@ function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', 
       {branches > 0 && (
         <div className="chip"><span className="dot" /><strong>{branches}</strong> branches</div>
       )}
-      <div className="chip pm"><span className="dot" />{model}</div>
+
+      <div style={{ position: 'relative' }}>
+        <div className="chip pm" onClick={() => canSwitch && setOpen(o => !o)}
+          title={canSwitch ? 'switch model' : undefined}
+          style={{ cursor: canSwitch ? 'pointer' : 'default', userSelect: 'none' }}>
+          <span className="dot" />{model}{canSwitch && <span style={{ marginLeft: 5, fontSize: 9, opacity: 0.7 }}>▾</span>}
+        </div>
+
+        {open && canSwitch && (
+          <>
+            <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 900 }} />
+            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 901, minWidth: 210,
+              background: 'var(--paper)', border: '1.5px solid var(--rule)', borderRadius: 6, boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: 5 }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-3)', padding: '4px 8px 6px', letterSpacing: 0.5 }}>USE THIS MODEL</div>
+
+              {[{ id: 'auto', label: 'Auto — best key available', ready: true }, ...ready].map(p => {
+                const active = providerInfo!.active === p.id;
+                return (
+                  <div key={p.id} onClick={() => { onSwitchProvider!(p.id); setOpen(false); }}
+                    style={{ fontSize: 12, padding: '6px 8px', borderRadius: 4, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center',
+                      background: active ? 'var(--pm-soft, rgba(74,111,165,0.12))' : 'transparent',
+                      fontWeight: active ? 700 : 400, color: active ? 'var(--pm)' : 'var(--ink)' }}>
+                    <span style={{ width: 10, fontSize: 10 }}>{active ? '●' : ''}</span>
+                    <span className="mono" style={{ flex: 1 }}>{p.id === 'auto' ? p.label : p.label}</span>
+                  </div>
+                );
+              })}
+
+              {/* Providers without a key are the reason to visit Settings, so link
+                  there instead of listing options that cannot be picked. */}
+              {(providerInfo!.available.filter(p => !p.ready).length > 0 || ready.length === 0) && (
+                <div onClick={() => { setOpen(false); onOpenSettings?.(); }}
+                  style={{ fontSize: 11.5, padding: '7px 8px', marginTop: 4, borderTop: '1px solid var(--rule-soft, rgba(0,0,0,0.08))',
+                    color: 'var(--pm)', cursor: 'pointer' }}>
+                  ＋ Add another model…
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -3312,7 +3362,8 @@ const App: React.FC = () => {
 
   const settingsModal = showSettings && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ width: 520, maxHeight: '88vh', overflowY: 'auto', background: 'var(--bg-elevated)', borderRadius: 10, padding: '28px 28px 24px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default)' }}>
+          <div style={{ width: 520, maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-elevated)', borderRadius: 10, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default)' }}>
+           <div style={{ flex: 1, overflowY: 'auto', padding: '28px 28px 8px' }}>
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Settings</div>
             <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 20 }}>
               Keys are written to the backend's <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>.env</code> and never leave your machine.
@@ -3344,7 +3395,7 @@ const App: React.FC = () => {
                     value={isGemini ? config.googleKey : (draftKeys[f.id] || '')}
                     onChange={e => isGemini ? setConfig({ ...config, googleKey: e.target.value }) : setDraftKey(f.id, e.target.value)}
                     style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '9px 12px', color: 'var(--text-primary)', borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
-                    placeholder={ready ? '•••••••••••  (leave blank to keep)' : f.placeholder}
+                    placeholder={ready ? '•••••••••••  saved — type a new key to replace it' : f.placeholder}
                   />
                   <input
                     value={draftModels[f.id] || ''}
@@ -3396,7 +3447,7 @@ const App: React.FC = () => {
                   <input value={draftCustom.baseUrl} onChange={e => setCustom('baseUrl', e.target.value)}
                     style={box} placeholder="base URL — e.g. https://api.moonshot.ai/v1" />
                   <input type="password" autoComplete="off" value={draftCustom.key} onChange={e => setCustom('key', e.target.value)}
-                    style={box} placeholder={ready ? '•••••••••••  (leave blank to keep)' : 'API key'} />
+                    style={box} placeholder={ready ? '•••••••••••  saved — type a new key to replace it' : 'API key'} />
 
                   {(() => {
                     const preset = CUSTOM_PRESETS.find(x => x.baseUrl === draftCustom.baseUrl);
@@ -3451,7 +3502,7 @@ const App: React.FC = () => {
             {/* S7: model provider selection (BYO-key; adapters already exist) */}
             {providerInfo && (
               <div style={{ marginTop: 22 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>MODEL ENGINE</label>
+                <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>WHICH MODEL TO USE</label>
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                   {[{ id: 'auto', label: 'Auto', ready: true }, ...providerInfo.available].map(p => {
                     const active = providerInfo.active === p.id;
@@ -3464,7 +3515,7 @@ const App: React.FC = () => {
                     );
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Active: {providerInfo.current} · greyed out = add that key below, then Save</div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>Now using {providerInfo.current}. Auto picks the first one you have a key for.</div>
               </div>
             )}
 
@@ -3493,7 +3544,8 @@ const App: React.FC = () => {
             </div>
 
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+           </div>
+            <div style={{ display: 'flex', gap: 10, padding: '14px 28px 22px', borderTop: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
               <button onClick={saveSettings} disabled={savingSettings} style={{ flex: 1, background: 'var(--accent-pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, cursor: savingSettings ? 'wait' : 'pointer', opacity: savingSettings ? 0.6 : 1, fontSize: 14 }}>{savingSettings ? 'Saving…' : 'Save'}</button>
               <button onClick={() => setShowSettings(false)} style={{ padding: '12px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
             </div>
@@ -3648,7 +3700,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar title={`PM · just opened ~/${projectLabel}`} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -3824,7 +3876,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -3979,7 +4031,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             {/* hideDocs: PM tabs only appear once user has approved workflow docs */}
@@ -4131,6 +4183,7 @@ const App: React.FC = () => {
       {/* ── Main area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--paper)', minWidth: 0 }}>
         <TopBar
+          providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)}
           title={(() => {
             if (!activeMission) return 'PM · Project Orchestrator';
             const deepA = activeWorker !== null ? activeMission.assignments.find(a => a.id === activeWorker) : null;
