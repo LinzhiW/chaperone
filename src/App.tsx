@@ -55,26 +55,49 @@ const WORKER_COLORS = ['#5d8aa8', '#87a36d', '#c98a5a', '#a86970', '#9b7ec8', '#
 // `keyUrl` matters more than it looks: someone who has never bought model access
 // has no idea these pages exist, and telling them "add an API key" without saying
 // where is the first place a non-technical user gets stuck for good.
-const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string; keyUrl: string }[] = [
+const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string; keyUrl: string; freeTier?: boolean }[] = [
   { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…', defaultModel: 'claude-opus-5', keyUrl: 'https://console.anthropic.com/settings/keys' },
   { id: 'openai', label: 'OpenAI', placeholder: 'sk-…', defaultModel: 'gpt-4o-mini', keyUrl: 'https://platform.openai.com/api-keys' },
-  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
+  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey', freeTier: true },
 ];
 
-/** Where to get a key, shown wherever we tell someone they need one. */
+/**
+ * Where to get a key — and the two things that strand people who have never
+ * bought API access. An API key comes from a separate developer account, not the
+ * chat subscription they may already pay for; and two of the three providers want
+ * a card before they hand one over. Saying so here is the difference between
+ * someone finishing setup and someone closing the app.
+ */
 function GetKeyLinks({ compact = false }: { compact?: boolean }) {
+  const free = PROVIDER_FIELDS.find(f => f.freeTier);
   return (
-    <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: compact ? 6 : 8, lineHeight: 1.6 }}>
-      Don't have one?{' '}
-      {PROVIDER_FIELDS.map((f, i) => (
-        <React.Fragment key={f.id}>
-          {i > 0 && ' · '}
-          <a href={f.keyUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--pm)', textDecoration: 'underline' }}>
-            {f.label.replace(/\s*\(.*\)$/, '')} ↗
-          </a>
-        </React.Fragment>
-      ))}
-      <div style={{ marginTop: 3 }}>You pay the model provider directly — Chaperone never sees the bill or the key.</div>
+    <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: compact ? 8 : 10, lineHeight: 1.6 }}>
+      {free && (
+        <div style={{ marginBottom: 4 }}>
+          Never done this before? Start with{' '}
+          <a href={free.keyUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--pm)', textDecoration: 'underline', fontWeight: 600 }}>
+            {free.label.replace(/\s*\(.*\)$/, '')} ↗
+          </a>{' '}
+          — it has a free tier and asks for no card.
+        </div>
+      )}
+      <div>
+        Others:{' '}
+        {PROVIDER_FIELDS.filter(f => !f.freeTier).map((f, i) => (
+          <React.Fragment key={f.id}>
+            {i > 0 && ' · '}
+            <a href={f.keyUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--pm)', textDecoration: 'underline' }}>
+              {f.label.replace(/\s*\(.*\)$/, '')} ↗
+            </a>
+          </React.Fragment>
+        ))}
+        {' '}(usually need a card first)
+      </div>
+      <div style={{ marginTop: 4 }}>
+        An API key is <strong>not</strong> your chat subscription — it comes from a separate developer
+        account, and paying for ChatGPT Plus or Claude Pro does not include one. You pay the provider
+        directly; Chaperone never sees your bill or your key.
+      </div>
     </div>
   );
 }
