@@ -246,6 +246,13 @@ function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSe
 
 /* Sidebar — Workspace / Team (PM + Depts) / Missions / Skills.
    Active item = inverted dark pill. Green-outlined ＋ buttons.                 */
+// Controls whose visual exists but whose behaviour does not — ported from the
+// wireframes and never wired up. Marked rather than deleted so the design intent
+// stays visible, and so nobody believes a Pause button stops anything. Grep
+// NOT_WIRED to find everything still owed.
+const NOT_WIRED = { opacity: 0.4, cursor: 'not-allowed' } as const;
+const NOT_WIRED_TITLE = 'Not built yet';
+
 // ─── File tree ──────────────────────────────────────────────────────────────
 // The sidebar used to print one flat readdir with no sign of what had changed —
 // the thing you most want after workers have been running. This is a real nested
@@ -644,9 +651,9 @@ function WorkerTile({ assignment, color, workerIndex, onStart, onApprove, nudgeI
             </div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--approve)' }}>✓ tests pass · coverage {75 + (assignment.id % 20)}%</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 'auto', display: 'flex', gap: 6 }}>
-              <span style={{ cursor: 'pointer', textDecoration: 'underline' }}>view branch diff</span>
+              <span title={NOT_WIRED_TITLE} style={{ textDecoration: 'underline', ...NOT_WIRED }}>view branch diff</span>
               <span>·</span>
-              <span style={{ cursor: 'pointer', textDecoration: 'underline' }}>view chat history</span>
+              <span title={NOT_WIRED_TITLE} style={{ textDecoration: 'underline', ...NOT_WIRED }}>view chat history</span>
             </div>
           </div>
         ) : (
@@ -779,7 +786,7 @@ function WorkerDeepDive({ assignment, color, mission, workerIndex, onBack, onApp
           <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--mono)' }}>{statusLabel}</span>
         </div>
         <span style={{ fontSize: 11, padding: '3px 10px', background: 'rgba(74,124,74,0.1)', border: '1px solid var(--approve)', borderRadius: 4, color: 'var(--approve)', fontWeight: 600, whiteSpace: 'nowrap' }}>● live</span>
-        <button style={{ fontSize: 11, padding: '3px 10px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-2)', fontFamily: 'var(--sans)' }}>⏸ Pause</button>
+        <button disabled title={NOT_WIRED_TITLE} style={{ ...NOT_WIRED, fontSize: 11, padding: '3px 10px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 4, color: 'var(--ink-2)', fontFamily: 'var(--sans)' }}>⏸ Pause</button>
       </div>
 
       {/* Body: chat + right rail */}
@@ -902,7 +909,7 @@ function WorkerDeepDive({ assignment, color, mission, workerIndex, onBack, onApp
           <div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Equipped Skills</span>
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--pm)', cursor: 'pointer' }}>edit loadout ↗</span>
+              <span title={NOT_WIRED_TITLE} style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--pm)', ...NOT_WIRED }}>edit loadout ↗</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {assignment.skillLoadout.length > 0 ? assignment.skillLoadout.map(s => (
@@ -3938,7 +3945,7 @@ const App: React.FC = () => {
                     {briefingAnswers.scope && briefingAnswers.who && briefingAnswers.store && (
                       <div style={{ display: 'flex', gap: 10, alignSelf: 'flex-start' }}>
                         <button onClick={() => setPmScreen('plan')} style={{ fontSize: 13, padding: '8px 18px', background: 'var(--ink)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>✎ Draft mission plan</button>
-                        <button style={{ fontSize: 13, padding: '8px 14px', background: 'transparent', color: 'var(--ink-2)', border: '1.5px solid var(--rule)', borderRadius: 4, cursor: 'pointer' }}>Keep refining</button>
+                        <button disabled title={NOT_WIRED_TITLE} style={{ ...NOT_WIRED, fontSize: 13, padding: '8px 14px', background: 'transparent', color: 'var(--ink-2)', border: '1.5px solid var(--rule)', borderRadius: 4 }}>Keep refining</button>
                       </div>
                     )}
                   </div>
@@ -3988,7 +3995,7 @@ const App: React.FC = () => {
                           <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>{a.task}</div>
                           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                             {a.skills.map(s => <span key={s} style={{ fontSize: 10, background: 'var(--worker-soft)', color: 'var(--worker)', border: '1px solid var(--worker)', borderRadius: 3, padding: '1px 5px' }}>{s}</span>)}
-                            <span style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px dashed var(--rule)', borderRadius: 3, padding: '1px 5px', cursor: 'pointer' }}>+ skill</span>
+                            <span title={NOT_WIRED_TITLE} style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px dashed var(--rule)', borderRadius: 3, padding: '1px 5px', ...NOT_WIRED }}>+ skill</span>
                           </div>
                         </div>
                       ))}
@@ -4008,9 +4015,9 @@ const App: React.FC = () => {
                   {/* Right: sticky comments gutter */}
                   <div style={{ width: 260, borderLeft: '1.5px solid var(--rule)', padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--paper-2)', overflow: 'auto', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>0 open comments</span>
+                    <span title={NOT_WIRED_TITLE} style={{ fontSize: 12, fontWeight: 600, flex: 1, ...NOT_WIRED }}>Comments</span>
                     </div>
-                    <button style={{ fontSize: 12, padding: '7px 10px', background: 'var(--ink)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer', opacity: 0.4 }}>
+                    <button disabled title={NOT_WIRED_TITLE} style={{ ...NOT_WIRED, fontSize: 12, padding: '7px 10px', background: 'var(--ink)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600 }}>
                       ✉ Send all to PM — revise plan
                     </button>
                     <div style={{ fontSize: 11, color: 'var(--ink-3)', textAlign: 'center', marginBottom: 4 }}>PM will batch-update the plan in one pass</div>
@@ -4093,7 +4100,7 @@ const App: React.FC = () => {
                     started {activeMission.startedAt ?? '--:--'}
                   </span>
                   {!allDone && activeMission.status === 'running' && (
-                    <button style={{ fontSize: 11, padding: '4px 10px', border: '1px solid var(--rule)', background: 'var(--paper)', borderRadius: 3, color: 'var(--ink-2)', cursor: 'pointer' }}>Pause mission</button>
+                    <button disabled title={NOT_WIRED_TITLE} style={{ ...NOT_WIRED, fontSize: 11, padding: '4px 10px', border: '1px solid var(--rule)', background: 'var(--paper)', borderRadius: 3, color: 'var(--ink-2)' }}>Pause mission</button>
                   )}
                   <button onClick={() => setActiveView('pm')} style={{ fontSize: 11, padding: '4px 10px', border: '1.5px solid var(--pm)', background: 'var(--paper)', borderRadius: 3, color: 'var(--pm)', cursor: 'pointer' }}>← PM panel</button>
                 </div>
