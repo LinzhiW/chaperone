@@ -246,12 +246,85 @@ function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSe
 
 /* Sidebar — Workspace / Team (PM + Depts) / Missions / Skills.
    Active item = inverted dark pill. Green-outlined ＋ buttons.                 */
+// ─── File tree ──────────────────────────────────────────────────────────────
+// The sidebar used to print one flat readdir with no sign of what had changed —
+// the thing you most want after workers have been running. This is a real nested
+// tree with git status per file.
+
+export type TreeNode = {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  status?: 'A' | 'M' | 'D';
+  children?: TreeNode[];
+};
+
+const STATUS_STYLE: Record<string, { color: string; label: string; title: string }> = {
+  A: { color: 'var(--approve, #4c8a5c)', label: 'A', title: 'added / untracked' },
+  M: { color: 'var(--pm, #4a6fa5)', label: 'M', title: 'modified' },
+  D: { color: 'var(--reject, #b4544f)', label: 'D', title: 'deleted' },
+};
+
+/** Does this subtree contain anything git considers changed? */
+function subtreeStatus(n: TreeNode): boolean {
+  if (n.type === 'file') return !!n.status;
+  return (n.children || []).some(subtreeStatus);
+}
+
+function FileTreeNode({ node, depth, openPath, onOpen }: {
+  node: TreeNode; depth: number; openPath: string | null; onOpen: (p: string) => void;
+}) {
+  // Folders holding a change start open, so a modified file is never buried.
+  const [open, setOpen] = useState(() => depth === 0 || subtreeStatus(node));
+  const pad = 4 + depth * 10;
+
+  if (node.type === 'dir') {
+    const changed = subtreeStatus(node);
+    return (
+      <>
+        <div
+          onClick={() => setOpen(o => !o)}
+          style={{ fontSize: 11.5, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0', paddingLeft: pad, cursor: 'pointer', userSelect: 'none' }}
+        >
+          <span style={{ fontSize: 9, width: 8, opacity: 0.6 }}>{open ? '▾' : '▸'}</span>
+          <span style={{ fontSize: 10, opacity: 0.75 }}>📁</span>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: changed ? 600 : 400 }}>{node.name}</span>
+          {changed && !open && <span style={{ fontSize: 8, color: 'var(--pm)' }}>●</span>}
+        </div>
+        {open && (node.children || []).map(c => (
+          <FileTreeNode key={c.path} node={c} depth={depth + 1} openPath={openPath} onOpen={onOpen} />
+        ))}
+      </>
+    );
+  }
+
+  const st = node.status ? STATUS_STYLE[node.status] : null;
+  const isOpen = openPath === node.path;
+  return (
+    <div
+      onClick={() => onOpen(node.path)}
+      title={node.path}
+      style={{
+        fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, padding: '1px 0', paddingLeft: pad + 12,
+        cursor: 'pointer', background: isOpen ? 'var(--pm-soft, rgba(74,111,165,0.12))' : 'transparent',
+        color: st ? st.color : 'var(--ink-2)',
+        textDecoration: node.status === 'D' ? 'line-through' : 'none',
+      }}
+    >
+      <span style={{ fontSize: 10, opacity: 0.75 }}>📄</span>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
+      {st && <span title={st.title} style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 700 }}>{st.label}</span>}
+    </div>
+  );
+}
+
 function Sidebar({
-  workspacePath, onOpenWorkspace, realFiles, onRefreshFiles, isLoadingFiles,
+  workspacePath, onOpenWorkspace, fileTree, deletedFiles, openFilePath, onOpenFile, onRefreshFiles, isLoadingFiles,
   activeView, onSelectPm, missions, onSelectMission, skills: _sk, onAddSkill, onNewMission,
   onSelectSkills, onRecruit, team,
 }: {
-  workspacePath: string; onOpenWorkspace: () => void; realFiles: string[]; onRefreshFiles: () => void;
+  workspacePath: string; onOpenWorkspace: () => void; fileTree: TreeNode[]; deletedFiles: TreeNode[];
+  openFilePath: string | null; onOpenFile: (p: string) => void; onRefreshFiles: () => void;
   isLoadingFiles: boolean; activeView: string; onSelectPm: () => void; missions: Mission[];
   onSelectMission: (id: string) => void; skills: Skill[]; onAddSkill: () => void; onNewMission: () => void;
   onSelectSkills: () => void; onRecruit: () => void; team: TeamWorker[];
@@ -276,18 +349,24 @@ function Sidebar({
               </div>
               {isLoadingFiles ? (
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic' }}>loading…</div>
-              ) : realFiles.length === 0 ? (
+              ) : fileTree.length === 0 && deletedFiles.length === 0 ? (
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic' }}>no files — path may be wrong</div>
               ) : (
-                realFiles.map(f => {
-                  const isDir = !f.includes('.');
-                  return (
-                    <div key={f} style={{ fontSize: 11.5, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 5, padding: '1px 0' }}>
-                      <span style={{ fontSize: 10, opacity: 0.75 }}>{isDir ? '📁' : '📄'}</span>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+                <>
+                  {fileTree.map(n => (
+                    <FileTreeNode key={n.path} node={n} depth={0} openPath={openFilePath} onOpen={onOpenFile} />
+                  ))}
+                  {/* Deleted files are gone from disk, so the walk cannot find them —
+                      listed separately or "what was removed" would be invisible. */}
+                  {deletedFiles.length > 0 && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--rule-soft)' }}>
+                      <div style={{ fontSize: 9, letterSpacing: 0.5, color: 'var(--ink-3)', marginBottom: 2 }}>DELETED</div>
+                      {deletedFiles.map(n => (
+                        <FileTreeNode key={n.path} node={n} depth={0} openPath={openFilePath} onOpen={onOpenFile} />
+                      ))}
                     </div>
-                  );
-                })
+                  )}
+                </>
               )}
             </>) : (
               <div onClick={onOpenWorkspace} style={{ fontSize: 11, color: 'var(--pm)', cursor: 'pointer' }}>＋ open a folder</div>
@@ -1925,6 +2004,14 @@ const App: React.FC = () => {
   const [backendStatus, setBackendStatus] = useState<'online' | 'offline'>('offline');
   const [realFiles, setRealFiles] = useState<string[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [fileTree, setFileTree] = useState<TreeNode[]>([]);
+  const [deletedFiles, setDeletedFiles] = useState<TreeNode[]>([]);
+  const [openFileState, setOpenFileState] = useState<{
+    path: string; loading?: boolean; content?: string; diff?: string;
+    status?: 'A' | 'M' | 'D' | null; binary?: boolean; tooLarge?: boolean;
+    deleted?: boolean; size?: number; error?: string;
+  } | null>(null);
+  const [fileViewMode, setFileViewMode] = useState<'content' | 'diff'>('diff');
   const [showSettings, setShowSettings] = useState(false);
   // S7: provider selection state.
   const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
@@ -2000,6 +2087,78 @@ const App: React.FC = () => {
     }
     askForText(o);
   };
+
+  // ── Onboarding: the PM's real look at the project ─────────────────────────
+  // Both of these screens used to be hardcoded theater: the scan screen printed a
+  // fixed list of tool calls the model never made and a fixed conclusion about
+  // files it never checked, and the docs screen let you "approve" a draft that did
+  // not exist. Now the model actually explores, and nothing is shown that it did
+  // not produce.
+  type Reply = { text: string; action: string | null };
+  const [scan, setScan] = useState<{
+    status: 'idle' | 'running' | 'done' | 'error';
+    summary: string; files: string[]; replies: Reply[]; error: string;
+  }>({ status: 'idle', summary: '', files: [], replies: [], error: '' });
+  const [scanInput, setScanInput] = useState('');
+
+  const [docsDraft, setDocsDraft] = useState<{
+    status: 'idle' | 'running' | 'done' | 'error';
+    drafts: { name: string; content: string }[]; note: string; files: string[]; error: string;
+  }>({ status: 'idle', drafts: [], note: '', files: [], error: '' });
+  const [savingDoc, setSavingDoc] = useState(false);
+
+  // Follow the user's environment rather than assuming English; the backend turns
+  // this into "answer in this language" for the model.
+  const uiLang = typeof navigator !== 'undefined' ? navigator.language || '' : '';
+
+  const runScan = async (workspacePath: string) => {
+    setScan({ status: 'running', summary: '', files: [], replies: [], error: '' });
+    try {
+      const res = await fetch(`${API_BASE}/api/pm/explore`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath, lang: uiLang, wantReplies: true }),
+      });
+      const d = await res.json();
+      if (d.error) { setScan(s => ({ ...s, status: 'error', error: d.error })); return; }
+      setScan({
+        status: 'done',
+        summary: d.summary || '',
+        files: Array.isArray(d.filesRead) ? d.filesRead : [],
+        replies: Array.isArray(d.suggestedReplies) ? d.suggestedReplies : [],
+        error: '',
+      });
+    } catch {
+      setScan(s => ({ ...s, status: 'error', error: 'Could not reach the backend.' }));
+    }
+  };
+
+  const runDraftDocs = async (workspacePath: string, docs?: string[]) => {
+    setDocsDraft({ status: 'running', drafts: [], note: '', files: [], error: '' });
+    try {
+      const res = await fetch(`${API_BASE}/api/pm/draft-docs`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath, lang: uiLang, ...(docs && docs.length ? { docs } : {}) }),
+      });
+      const d = await res.json();
+      if (d.error) { setDocsDraft(s => ({ ...s, status: 'error', error: d.error })); return; }
+      setDocsDraft({
+        status: 'done',
+        drafts: Array.isArray(d.drafts) ? d.drafts : [],
+        note: d.note || '',
+        files: Array.isArray(d.filesRead) ? d.filesRead : [],
+        error: '',
+      });
+      setDocsStep(0);
+    } catch {
+      setDocsDraft(s => ({ ...s, status: 'error', error: 'Could not reach the backend.' }));
+    }
+  };
+
+  useEffect(() => {
+    const wp = config.projectPath || onbPath;
+    if (onboardingPhase === 'scan' && scan.status === 'idle' && wp) runScan(wp);
+    if (onboardingPhase === 'docs' && docsDraft.status === 'idle' && wp) runDraftDocs(wp);
+  }, [onboardingPhase, config.projectPath, onbPath, scan.status, docsDraft.status]);
 
   const closeAsk = () => setAsk(null);
   const submitAsk = () => {
@@ -2089,17 +2248,50 @@ const App: React.FC = () => {
   // ─── Handlers ────────────────────────────────────────────────────────────────
 
   const refreshFiles = async () => {
+    if (!config.projectPath) return;
     setIsLoadingFiles(true);
     try {
-      const res = await fetch(`${API_BASE}/api/files?path=${encodeURIComponent(config.projectPath)}`);
+      const res = await fetch(`${API_BASE}/api/files/tree?workspacePath=${encodeURIComponent(config.projectPath)}`);
       const data = await res.json();
-      if (data.files) setRealFiles(data.files);
-    } finally { setIsLoadingFiles(false); }
+      if (Array.isArray(data.tree)) {
+        setFileTree(data.tree);
+        setDeletedFiles(Array.isArray(data.deleted) ? data.deleted : []);
+        // The PM's prompt still wants a flat list of paths for context.
+        const flat: string[] = [];
+        const walk = (ns: TreeNode[]) => ns.forEach(n => {
+          if (n.type === 'dir') walk(n.children || []);
+          else flat.push(n.path);
+        });
+        walk(data.tree);
+        setRealFiles(flat);
+      }
+    } catch { /* sidebar shows the empty state */ } finally { setIsLoadingFiles(false); }
+  };
+
+  /** Open a file in the viewer. A modified file opens on its diff. */
+  const openFile = async (relPath: string) => {
+    setOpenFileState({ path: relPath, loading: true });
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/files/content?workspacePath=${encodeURIComponent(config.projectPath)}&path=${encodeURIComponent(relPath)}`,
+      );
+      const d = await res.json();
+      setOpenFileState({ ...d, path: relPath, loading: false });
+      setFileViewMode(d.diff ? 'diff' : 'content');
+    } catch {
+      setOpenFileState({ path: relPath, loading: false, error: 'Could not read that file.' });
+    }
   };
 
   const openWorkspace = () => {
-    const path = prompt('Enter project workspace path:', config.projectPath);
-    if (path !== null && path.trim()) switchProject(path.trim());
+    askForFolder({
+      title: 'Open a project folder',
+      hint: 'Full path to the folder.\ne.g. /Users/you/code/my-app   or   C:\\Users\\you\\code\\my-app',
+      placeholder: 'path to project folder',
+      initial: config.projectPath,
+      confirmLabel: 'Open',
+      onConfirm: p => switchProject(p),
+    });
   };
 
   // ── Multi-project rail ──────────────────────────────────────────────────────
@@ -2683,6 +2875,73 @@ const App: React.FC = () => {
   // ── M1 · Onboarding Screen 0a · Welcome (no project) ──────────────────────
   // 1-to-1 port of Onboarding_Welcome in wf-onboarding.jsx, with tiles
   // reordered per user: Start from scratch / Open folder / Clone GitHub.
+  // ── File viewer ──
+  // A modified file opens on its diff, because "what changed" is the question the
+  // sidebar is there to answer; the whole file is one click away.
+  const fileModal = openFileState && (
+    <div onClick={() => setOpenFileState(null)}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 'min(1000px, 92vw)', height: 'min(720px, 88vh)', background: 'var(--bg-elevated, var(--paper))', borderRadius: 10, border: '1px solid var(--border-default, var(--rule))', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.45)' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1.5px solid var(--rule)' }}>
+          <span className="mono" style={{ fontSize: 12, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {openFileState.path}
+          </span>
+          {openFileState.status && STATUS_STYLE[openFileState.status] && (
+            <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: STATUS_STYLE[openFileState.status].color }}>
+              {STATUS_STYLE[openFileState.status].title}
+            </span>
+          )}
+          {!!openFileState.diff && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['diff', 'content'] as const).map(m => (
+                <button key={m} onClick={() => setFileViewMode(m)}
+                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: fileViewMode === m ? 700 : 400,
+                    background: fileViewMode === m ? 'var(--pm)' : 'transparent', color: fileViewMode === m ? '#fff' : 'var(--ink-2)',
+                    border: `1px solid ${fileViewMode === m ? 'var(--pm)' : 'var(--rule)'}` }}>
+                  {m === 'diff' ? 'Changes' : 'Whole file'}
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setOpenFileState(null)}
+            style={{ fontSize: 16, lineHeight: 1, padding: '2px 8px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-3)' }}>×</button>
+        </div>
+
+        <div className="wf-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--paper)' }}>
+          {openFileState.loading && <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-3)' }}>loading…</div>}
+          {openFileState.error && <div style={{ padding: 16, fontSize: 12, color: 'var(--reject, #b4544f)' }}>{openFileState.error}</div>}
+          {openFileState.binary && <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-3)' }}>Binary file ({openFileState.size} bytes) — nothing to show.</div>}
+          {openFileState.tooLarge && <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-3)' }}>File is {Math.round((openFileState.size || 0) / 1024)} KB — too large to display.</div>}
+
+          {!openFileState.loading && !openFileState.error && !openFileState.binary && !openFileState.tooLarge && (
+            fileViewMode === 'diff' && openFileState.diff ? (
+              <pre className="mono" style={{ margin: 0, padding: '10px 0', fontSize: 12, lineHeight: 1.55 }}>
+                {openFileState.diff.split('\n').map((line, i) => {
+                  const added = line.startsWith('+') && !line.startsWith('+++');
+                  const removed = line.startsWith('-') && !line.startsWith('---');
+                  const meta = line.startsWith('@@') || line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('+++') || line.startsWith('---');
+                  return (
+                    <div key={i} style={{
+                      padding: '0 16px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      background: added ? 'rgba(76,138,92,0.14)' : removed ? 'rgba(180,84,79,0.14)' : 'transparent',
+                      color: meta ? 'var(--ink-3)' : added ? 'var(--approve, #4c8a5c)' : removed ? 'var(--reject, #b4544f)' : 'var(--ink-2)',
+                    }}>{line || ' '}</div>
+                  );
+                })}
+              </pre>
+            ) : (
+              <pre className="mono" style={{ margin: 0, padding: 16, fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--ink-2)' }}>
+                {openFileState.deleted ? '(file was deleted)' : openFileState.content}
+              </pre>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Settings Modal ──
   // Defined before the onboarding early-returns below so every phase can render
   // it. It used to live only in the final return, which meant clicking the gear
@@ -2914,6 +3173,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {fileModal}
       {askModal}
       </div>
     );
@@ -2922,15 +3182,30 @@ const App: React.FC = () => {
   // ── Screen 1.2 · PM analyzes folder (Path B) ─────────────────────────────
   if (onboardingPhase === 'scan') {
     const projectLabel = (config.projectPath || onbPath).split(/[\\/]/).pop() || 'project';
-    const onUserReply = (choice: 'all' | 'prd' | 'skip') => {
-      if (choice === 'skip') {
-        setDocsReady(false);
-        setOnboardingPhase('ready');
-      } else {
-        setDocsChoice(choice);
-        setDocsStep(0);
+    // Which suggestion maps to which action is the model's call, not ours — it
+    // tagged the replies it wrote. An untagged reply is just a message, so it goes
+    // to the PM in the real chat and the model decides what to do with it.
+    const onUserReply = (text: string, action: string | null) => {
+      const wp = config.projectPath || onbPath;
+      if (action === 'draft_docs') {
+        setDocsDraft({ status: 'idle', drafts: [], note: '', files: [], error: '' });
         setOnboardingPhase('docs');
+        return;
       }
+      if (action === 'start_working') {
+        setDocsReady(false);
+        enterProject(wp, onbKey);
+        return;
+      }
+      enterProject(wp, onbKey);
+      setOnboardingPhase('done');
+      sendPmMessage(text);
+    };
+    const submitScanReply = () => {
+      const t = scanInput.trim();
+      if (!t) return;
+      setScanInput('');
+      onUserReply(t, null);
     };
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
@@ -2961,49 +3236,68 @@ const App: React.FC = () => {
                   <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
                     <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-                      Hey — you just pointed me at ~/{projectLabel}. Let me poke around a bit so I know what the next step is.
+                      Hey — you just pointed me at ~/{projectLabel}. Let me read it before I say anything about it.
                     </div>
                   </div>
 
-                  {/* Tool calls */}
-                  <div className="box-soft" style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div><span style={{ color: 'var(--approve)' }}>✓</span> read_file <span style={{ color: 'var(--pm)' }}>README.md</span></div>
-                    <div><span style={{ color: 'var(--approve)' }}>✓</span> read_file <span style={{ color: 'var(--pm)' }}>package.json</span></div>
-                    <div><span style={{ color: 'var(--approve)' }}>✓</span> run_shell <span style={{ color: 'var(--pm)' }}>tree -L 2 src/</span></div>
-                    <div><span style={{ color: 'var(--approve)' }}>✓</span> read_file <span style={{ color: 'var(--pm)' }}>src/App.tsx</span> <span style={{ color: 'var(--ink-3)' }}>· first 80 lines</span></div>
-                  </div>
-
-                  {/* PM question */}
-                  <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-                      Okay — I can see your project. I don't see a <span className="mono" style={{ fontSize: 11 }}>PRD.md</span>, <span className="mono" style={{ fontSize: 11 }}>SOP.md</span>, or <span className="mono" style={{ fontSize: 11 }}>Dev log.md</span> at the root. Those are the three files I use as long-term memory across missions — without them I'll have to re-derive context from the code every time.
+                  {/* Files the PM actually opened — empty until it has read something. */}
+                  {(scan.status === 'running' || scan.files.length > 0) && (
+                    <div className="box-soft" style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {scan.files.map(f => (
+                        <div key={f}><span style={{ color: 'var(--approve)' }}>✓</span> read_file <span style={{ color: 'var(--pm)' }}>{f}</span></div>
+                      ))}
+                      {scan.status === 'running' && (
+                        <div style={{ color: 'var(--ink-3)' }}>… reading the project</div>
+                      )}
                     </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55, marginTop: 8 }}>
-                      Want me to draft them now? I can write a first pass from what I just read, then you approve each one before it lands on disk.
+                  )}
+
+                  {scan.status === 'error' && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560, borderColor: 'var(--reject, #b4544f)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--reject, #b4544f)', marginBottom: 4 }}>COULDN'T READ THE PROJECT</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>{scan.error}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <span onClick={() => runScan(config.projectPath || onbPath)} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>Try again</span>
+                        <span onClick={() => { setDocsReady(false); enterProject(config.projectPath || onbPath, onbKey); }} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>Skip — start working</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Reply chips */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <span onClick={() => onUserReply('all')} className="branch-chip" style={{ cursor: 'pointer', background: 'var(--pm-soft)', borderColor: 'var(--pm)', color: 'var(--pm)', fontWeight: 600, fontSize: 11, padding: '5px 12px' }}>
-                      Yes — draft all three
-                    </span>
-                    <span onClick={() => onUserReply('prd')} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>
-                      Just PRD for now
-                    </span>
-                    <span onClick={() => onUserReply('skip')} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>
-                      Skip — start working
-                    </span>
-                  </div>
+                  {/* The PM's own words. Nothing here is written by the app. */}
+                  {scan.status === 'done' && scan.summary && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>{renderRich(scan.summary)}</div>
+                    </div>
+                  )}
 
-                  <div style={{ fontFamily: 'var(--hand)', fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>↓ or just type a reply</div>
+                  {/* Suggested replies — also the model's, phrased as the CEO. */}
+                  {scan.status === 'done' && scan.replies.length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {scan.replies.map((r, i) => (
+                        <span key={`${r.text}-${i}`} onClick={() => onUserReply(r.text, r.action)} className="branch-chip"
+                          style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px', ...(i === 0 ? { background: 'var(--pm-soft)', borderColor: 'var(--pm)', color: 'var(--pm)', fontWeight: 600 } : {}) }}>
+                          {r.text}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
-                  {/* Reply input */}
-                  <div className="composer" style={{ padding: '10px 12px', maxWidth: 560 }}>
-                    <span style={{ color: 'var(--ink-3)' }}>reply to PM…</span>
-                    <span className="send">↵</span>
-                  </div>
+                  {scan.status === 'done' && (
+                    <>
+                      <div style={{ fontFamily: 'var(--hand)', fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>↓ or just type a reply</div>
+                      <div className="composer" style={{ padding: '10px 12px', maxWidth: 560 }}>
+                        <input
+                          value={scanInput}
+                          onChange={e => setScanInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') submitScanReply(); }}
+                          placeholder="reply to PM…"
+                          style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', font: 'inherit', color: 'var(--ink)' }}
+                        />
+                        <span className="send" onClick={submitScanReply} style={{ cursor: 'pointer' }}>↵</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </PMShell>
@@ -3011,6 +3305,7 @@ const App: React.FC = () => {
           <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
       {settingsModal}
+      {fileModal}
       {askModal}
       </div>
     );
@@ -3019,32 +3314,41 @@ const App: React.FC = () => {
   // ── Screen 1.3 · PM drafts docs — HITL per file ───────────────────────────
   if (onboardingPhase === 'docs') {
     const projectLabel = (config.projectPath || onbPath).split(/[\\/]/).pop() || 'project';
-    const docList = docsChoice === 'prd' ? ['PRD.md'] : ['PRD.md', 'SOP.md', 'Dev log.md'];
-    const currentDoc = docList[docsStep];
-    const docDescriptions: Record<string, string> = {
-      'PRD.md': 'Product: A project — Goals, non-goals, stack, open questions',
-      'SOP.md': 'Coding style, test conventions, branch naming, commit format',
-      'Dev log.md': 'Empty file — first entry gets written after the first Reviewer report',
+    const wp = config.projectPath || onbPath;
+    // What gets drafted is whatever the model decided this project is missing —
+    // not a fixed list of three.
+    const drafts = docsDraft.drafts;
+    const docList = drafts.map(d => d.name);
+    const current = drafts[docsStep];
+
+    /** Approval is what puts a file on disk. Nothing is written before this. */
+    const writeDoc = async (d: { name: string; content: string }) => {
+      await fetch(`${API_BASE}/api/doc`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspacePath: wp, name: d.name, content: d.content }),
+      });
     };
-    const approveDoc = () => {
-      if (docsStep < docList.length - 1) {
-        setDocsStep(s => s + 1);
-      } else {
-        setDocsReady(true);
-        enterProject(config.projectPath || onbPath, onbKey);
-        setOnboardingPhase('ready');
-      }
-    };
-    const skipAll = () => {
-      setDocsReady(false);
-      enterProject(config.projectPath || onbPath, onbKey);
+    const finish = (wrote: boolean) => {
+      setDocsReady(wrote);
+      enterProject(wp, onbKey);
       setOnboardingPhase('ready');
     };
-    const approveAll = () => {
-      setDocsReady(true);
-      enterProject(config.projectPath || onbPath, onbKey);
-      setOnboardingPhase('ready');
+    const approveDoc = async () => {
+      if (!current || savingDoc) return;
+      setSavingDoc(true);
+      try { await writeDoc(current); } catch { /* surfaced by the docs tab later */ }
+      setSavingDoc(false);
+      if (docsStep < drafts.length - 1) setDocsStep(s => s + 1);
+      else finish(true);
     };
+    const approveAll = async () => {
+      if (savingDoc) return;
+      setSavingDoc(true);
+      try { for (const d of drafts.slice(docsStep)) await writeDoc(d); } catch { /* ditto */ }
+      setSavingDoc(false);
+      finish(true);
+    };
+    const skipAll = () => finish(false);
     return (
       <div className="wf" style={{ flexDirection: 'row', height: '100vh' }}>
         <MissionRail
@@ -3056,26 +3360,57 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar title={`PM · drafting initial docs · ${docsStep + 1} of ${docList.length}`} model={config.defaultModel} />
+          <TopBar title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
               <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                  {/* User reply */}
-                  <div className="box" style={{ padding: '10px 14px', background: 'var(--paper-2)', alignSelf: 'flex-end', maxWidth: 400 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 4 }}>You</div>
-                    <div style={{ fontSize: 13 }}>{docsChoice === 'all' ? 'Yes — draft all three.' : 'Just PRD for now.'}</div>
-                  </div>
-
-                  {/* PM response */}
-                  <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-                      Got it. I'll do them one at a time so you can edit each before it lands on disk. Starting with <span className="mono" style={{ fontSize: 11 }}>PRD.md</span>.
+                  {docsDraft.status === 'running' && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                        Reading the project, then writing the drafts. Nothing lands on disk until you approve it.
+                      </div>
+                      {docsDraft.files.length > 0 && (
+                        <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>
+                          read {docsDraft.files.length} file(s)
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
+
+                  {docsDraft.status === 'error' && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560, borderColor: 'var(--reject, #b4544f)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--reject, #b4544f)', marginBottom: 4 }}>COULDN'T DRAFT</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>{docsDraft.error}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <span onClick={() => runDraftDocs(wp)} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>Try again</span>
+                        <span onClick={skipAll} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px' }}>Skip — start working</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* The model looked and found nothing to write. Its words, not ours. */}
+                  {docsDraft.status === 'done' && drafts.length === 0 && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>{docsDraft.note || 'Nothing to draft.'}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <span onClick={skipAll} className="branch-chip" style={{ cursor: 'pointer', fontSize: 11, padding: '5px 12px', background: 'var(--pm-soft)', borderColor: 'var(--pm)', color: 'var(--pm)', fontWeight: 600 }}>Start working</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {docsDraft.status === 'done' && drafts.length > 0 && (
+                    <div className="box" style={{ padding: '10px 14px', background: 'var(--paper)', maxWidth: 560 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pm)', marginBottom: 4 }}>PM</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                        I read {docsDraft.files.length} file(s) and drafted {drafts.length === 1 ? '1 document' : `${drafts.length} documents`}. One at a time — approve each before it lands on disk.
+                      </div>
+                    </div>
+                  )}
 
                   {/* Stepper */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3093,25 +3428,51 @@ const App: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* HITL card for current doc */}
-                  <div className="hitl">
-                    <div className="hitl-head">
-                      <span>⏸</span>
-                      <span>APPROVAL NEEDED · write_file</span>
-                      <span style={{ marginLeft: 'auto', color: 'var(--ink-3)', fontWeight: 400 }}>{currentDoc} · new file</span>
+                  {/* The actual draft, in full — this is exactly what gets written. */}
+                  {current && (
+                    <div className="hitl">
+                      <div className="hitl-head">
+                        <span>⏸</span>
+                        <span>APPROVAL NEEDED · write_file</span>
+                        <span style={{ marginLeft: 'auto', color: 'var(--ink-3)', fontWeight: 400 }}>
+                          .chaperone/{current.name} · {current.content.split('\n').length} lines
+                        </span>
+                      </div>
+                      <textarea
+                        value={current.content}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setDocsDraft(s => ({
+                            ...s,
+                            drafts: s.drafts.map((d, i) => (i === docsStep ? { ...d, content: v } : d)),
+                          }));
+                        }}
+                        spellCheck={false}
+                        style={{
+                          width: '100%', minHeight: 240, maxHeight: 420, resize: 'vertical',
+                          fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.6,
+                          padding: '10px 12px', borderRadius: 4,
+                          border: '1.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)',
+                        }}
+                      />
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)', margin: '6px 0 8px' }}>
+                        Editable — change anything before approving, and what you see here is what gets written.
+                      </div>
+                      <div className="hitl-actions">
+                        <button className="btn approve" onClick={approveDoc} disabled={savingDoc}>
+                          {savingDoc ? 'Writing…' : '✓ Approve & write'}
+                        </button>
+                        <button className="btn reject" onClick={docsStep < drafts.length - 1 ? () => setDocsStep(s => s + 1) : skipAll}>
+                          Skip this one
+                        </button>
+                      </div>
                     </div>
-                    <div className="hitl-cmd">{docDescriptions[currentDoc]}</div>
-                    <div className="hitl-actions">
-                      <button className="btn approve" onClick={approveDoc}>✓ Approve &amp; write</button>
-                      <button className="btn" style={{ background: 'var(--paper)', border: '1.5px solid var(--rule)', color: 'var(--ink)' }}>Edit before write…</button>
-                      <button className="btn reject" onClick={docsStep < docList.length - 1 ? () => setDocsStep(s => s + 1) : skipAll}>Skip this one</button>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Next steps preview */}
                   {docList.slice(docsStep + 1).map(doc => (
                     <div key={doc} style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', paddingLeft: 4 }}>
-                      ○ next · {doc} {doc === 'Dev log.md' ? '— empty file, populated after first mission' : ''}
+                      ○ next · {doc}
                     </div>
                   ))}
 
@@ -3126,9 +3487,10 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={1} extra={`PM · drafting ${currentDoc} · awaiting approval · ${docsStep + 1} of ${docList.length}`} />
+          <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
         </div>
       {settingsModal}
+      {fileModal}
       {askModal}
       </div>
     );
@@ -3256,6 +3618,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {fileModal}
       {askModal}
       </div>
     );
@@ -3276,7 +3639,10 @@ const App: React.FC = () => {
       <Sidebar
         workspacePath={config.projectPath}
         onOpenWorkspace={openWorkspace}
-        realFiles={realFiles}
+        fileTree={fileTree}
+        deletedFiles={deletedFiles}
+        openFilePath={openFileState?.path ?? null}
+        onOpenFile={openFile}
         onRefreshFiles={refreshFiles}
         isLoadingFiles={isLoadingFiles}
         activeView={activeView}
@@ -3927,6 +4293,7 @@ const App: React.FC = () => {
       )}
 
       {settingsModal}
+      {fileModal}
       {askModal}
 
       <style>{`

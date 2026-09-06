@@ -228,6 +228,123 @@ app.get('/api/files', (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
+// --- File tree with git status ---
+// The sidebar used to show one flat readdir with no indication of what had
+// changed, which is the thing you most want to see after workers have been
+// running. This returns a real nested tree plus a per-path status so additions,
+// modifications and deletions are visible without leaving the app.
+
+type TreeNode = {
+  name: string;
+  path: string;                       // workspace-relative, forward-slashed
+  type: 'file' | 'dir';
+  status?: 'A' | 'M' | 'D';           // added/untracked, modified, deleted
+  children?: TreeNode[];
+};
+
+/** Resolve a workspace-relative path, refusing anything that escapes the root. */
+function safeResolve(root: string, rel: string): string | null {
+  const full = path.resolve(root, rel);
+  const rootResolved = path.resolve(root);
+  return full === rootResolved || full.startsWith(rootResolved + path.sep) ? full : null;
+}
+
+/** Map simple-git's status into one letter per path. */
+async function gitStatusMap(workspacePath: string): Promise<Record<string, 'A' | 'M' | 'D'>> {
+  const map: Record<string, 'A' | 'M' | 'D'> = {};
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return map;
+    const st = await git.status();
+    const norm = (p: string) => p.replace(/\\/g, '/');
+    for (const f of st.not_added) map[norm(f)] = 'A';
+    for (const f of st.created) map[norm(f)] = 'A';
+    for (const f of st.deleted) map[norm(f)] = 'D';
+    for (const f of st.modified) map[norm(f)] = 'M';
+    for (const f of st.renamed) map[norm((f as any).to || '')] = 'A';
+  } catch { /* not a repo, or git unavailable — the tree still renders */ }
+  return map;
+}
+
+app.get('/api/files/tree', async (req, res) => {
+  const workspacePath = expandHome(String(req.query.workspacePath || ''));
+  if (!workspacePath || !fs.existsSync(workspacePath)) return res.status(400).json({ error: 'Invalid path' });
+
+  const status = await gitStatusMap(workspacePath);
+
+  let count = 0;
+  const MAX = 4000;
+  const build = (dir: string, rel: string, depth: number): TreeNode[] => {
+    if (depth > 8 || count >= MAX) return [];
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+
+    const nodes: TreeNode[] = [];
+    for (const e of entries) {
+      if (count >= MAX) break;
+      if (TREE_IGNORE.has(e.name)) continue;
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      count++;
+      if (e.isDirectory()) {
+        const children = build(path.join(dir, e.name), childRel, depth + 1);
+        nodes.push({ name: e.name, path: childRel, type: 'dir', children });
+      } else {
+        nodes.push({ name: e.name, path: childRel, type: 'file', ...(status[childRel] ? { status: status[childRel] } : {}) });
+      }
+    }
+    // Directories first, then alphabetical — the order a file explorer uses.
+    nodes.sort((a, b) =>
+      a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1);
+    return nodes;
+  };
+
+  // Deleted files are gone from disk, so they never appear in the walk — add them
+  // back, otherwise "what was removed" is exactly what you cannot see.
+  const deleted = Object.entries(status)
+    .filter(([, s]) => s === 'D')
+    .map(([p]) => ({ name: p.split('/').pop() || p, path: p, type: 'file' as const, status: 'D' as const }));
+
+  res.json({ tree: build(workspacePath, '', 0), deleted, truncated: count >= MAX });
+});
+
+// Read one file for the viewer. For a modified file the diff is the useful view —
+// that is what "what changed" means — so it is returned alongside the content.
+app.get('/api/files/content', async (req, res) => {
+  const workspacePath = expandHome(String(req.query.workspacePath || ''));
+  const rel = String(req.query.path || '');
+  if (!workspacePath || !rel) return res.status(400).json({ error: 'Missing workspacePath or path' });
+
+  const full = safeResolve(workspacePath, rel);
+  if (!full) return res.status(400).json({ error: 'Path escapes the workspace' });
+
+  const status = (await gitStatusMap(workspacePath))[rel.replace(/\\/g, '/')];
+
+  let diff = '';
+  if (status === 'M' || status === 'D') {
+    try { diff = await simpleGit(workspacePath).diff(['--', rel]); } catch { /* leave empty */ }
+  }
+
+  if (status === 'D' || !fs.existsSync(full)) {
+    return res.json({ path: rel, status: status || null, content: '', diff, deleted: true });
+  }
+
+  try {
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) return res.status(400).json({ error: 'That is a directory' });
+    if (stat.size > 1_000_000) {
+      return res.json({ path: rel, status: status || null, content: '', diff, tooLarge: true, size: stat.size });
+    }
+    const buf = fs.readFileSync(full);
+    // Crude but effective binary check: a NUL byte in the first 4KB.
+    if (buf.subarray(0, 4096).includes(0)) {
+      return res.json({ path: rel, status: status || null, content: '', diff, binary: true, size: stat.size });
+    }
+    res.json({ path: rel, status: status || null, content: buf.toString('utf-8'), diff, size: stat.size });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * Update a .env file in place, touching only the given keys.
  *
@@ -1023,48 +1140,188 @@ const EXPLORE_TOOLS = [
   { name: 'read_file', description: 'Read a file by its relative path (from list_files).', parameters: { type: 'OBJECT', properties: { path: { type: 'STRING' } }, required: ['path'] } },
 ];
 
-app.post('/api/pm/explore', async (req, res) => {
-  let { workspacePath } = req.body || {};
-  if (!workspacePath) return res.status(400).json({ error: 'Missing workspacePath' });
-  if (workspacePath.startsWith('~')) workspacePath = path.join(os.homedir(), workspacePath.slice(1));
-  if (!getApiKey()) return res.status(400).json({ error: 'API key missing' });
-  if (!fs.existsSync(workspacePath)) return res.status(400).json({ error: `Path not found: ${workspacePath}` });
+/** Resolve `~`, verify the path and the API key. Returns an error string, or null. */
+function checkWorkspace(workspacePath: string): string | null {
+  if (!workspacePath) return 'Missing workspacePath';
+  if (!getApiKey()) return 'API key missing';
+  if (!fs.existsSync(workspacePath)) return `Path not found: ${workspacePath}`;
+  return null;
+}
 
+const expandHome = (p: string) =>
+  p && p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+
+function languageName(langCode: string): string {
+  const c = String(langCode || '').toLowerCase();
+  if (/zh|cn|[一-鿿]/.test(c)) return '简体中文 (Simplified Chinese)';
+  if (/ja|[぀-ヿ]/.test(c)) return '日本語 (Japanese)';
+  if (/ko|[가-힯]/.test(c)) return '한국어 (Korean)';
+  return '';
+}
+
+/**
+ * Run the read-only exploration loop: the model drives, calling list_files and
+ * read_file until it is ready to answer. Shared by every "PM looks at the repo"
+ * endpoint so they all explore the same way.
+ */
+async function runExploreLoop(system: string, kickoff: string, workspacePath: string) {
   const tree = walkTree(workspacePath, 600, 6);
   const filesRead: string[] = [];
-  const langCode = String(req.body?.lang || '').toLowerCase();
-  const langName =
-    /zh|cn|[一-鿿]/.test(langCode) ? '简体中文 (Simplified Chinese)' :
-    /ja|[぀-ヿ]/.test(langCode)    ? '日本語 (Japanese)' :
-    /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
+
+  const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
+  let turn = await session.sendMessage(kickoff);
+
+  for (let step = 0; step < 16; step++) {
+    if (!turn.toolCalls || turn.toolCalls.length === 0) break;
+    const results = turn.toolCalls.map(call => {
+      if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
+      if (call.name === 'read_file') {
+        const rel = String((call.args as any)?.path || '');
+        filesRead.push(rel);
+        return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
+      }
+      return { name: call.name, result: '[ERROR] unknown tool' };
+    });
+    turn = await session.sendToolResults(results);
+  }
+
+  return { text: turn.text || '', filesRead: [...new Set(filesRead)] };
+}
+
+/** Pull a `<<<TAG>>> … <<<END_TAG>>>` block out of model output. */
+function extractBlock(text: string, tag: string): { body: string | null; rest: string } {
+  const re = new RegExp(`<<<${tag}>>>([\\s\\S]*?)<<<END_${tag}>>>`);
+  const m = text.match(re);
+  return { body: m ? m[1].trim() : null, rest: text.replace(re, '').trim() };
+}
+
+app.post('/api/pm/explore', async (req, res) => {
+  const workspacePath = expandHome(req.body?.workspacePath);
+  const problem = checkWorkspace(workspacePath);
+  if (problem) return res.status(400).json({ error: problem });
+
+  const langName = languageName(req.body?.lang);
+  // Opt-in: the onboarding scan asks for follow-up options, the main "go over my
+  // project" button does not.
+  const wantReplies = !!req.body?.wantReplies;
 
   const system = `You are the PM (lead agent) of Chaperone for THIS project. The CEO just asked you to get up to speed on it.
 
 You have READ-ONLY tools — actually USE them to explore, the way a capable engineer would: call list_files to see what exists, then read the files that reveal what this project is (README, package.json, docs/*, key source/config). You decide what to open — read whatever you need before answering. Do not guess about something you could just read.
 
-When you're done exploring, tell the CEO — in their own language — what this project actually IS (purpose/product), its tech stack, and its current state. Format as short, scannable Markdown with a few bold mini-headings. Be specific and grounded in what you read; if something genuinely isn't in the files, say so.${langName ? `\n\nIMPORTANT: Write your entire final briefing in ${langName}. Not English.` : ''}`;
+When you're done exploring, tell the CEO — in their own language — what this project actually IS (purpose/product), its tech stack, and its current state. Format as short, scannable Markdown with a few bold mini-headings. Be specific and grounded in what you read; if something genuinely isn't in the files, say so.${langName ? `\n\nIMPORTANT: Write your entire final briefing in ${langName}. Not English.` : ''}${
+    wantReplies
+      ? `
+
+After the briefing, add 2-4 replies the CEO might plausibly send you next, one per line, wrapped exactly like this:
+<<<REPLIES>>>
+first option
+second option|action_name
+<<<END_REPLIES>>>
+
+Rules for that block: these are the CEO's words, not yours — write them in first person, short, as something they would actually type. Base them on what you FOUND, not on a template: only offer to write a PRD.md / SOP.md / Dev log.md if the project genuinely lacks them, and if it already has them, offer whatever the real next step is instead.
+
+This app can carry out two things directly. If — and only if — a reply you wrote means one of them, append "|" and the action name to that line. Otherwise leave the line bare and it becomes an ordinary message to you.
+- draft_docs — you draft the missing memory documents for the CEO to approve
+- start_working — skip document setup and go straight to briefing a mission`
+      : ''
+  }`;
 
   try {
-    const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
-    let turn = await session.sendMessage('Start exploring this project now using your tools, then give me your briefing.');
+    const { text, filesRead } = await runExploreLoop(
+      system,
+      'Start exploring this project now using your tools, then give me your briefing.',
+      workspacePath,
+    );
 
-    for (let step = 0; step < 16; step++) {
-      if (!turn.toolCalls || turn.toolCalls.length === 0) break;
-      const results = turn.toolCalls.map(call => {
-        if (call.name === 'list_files') return { name: call.name, result: tree.join('\n') };
-        if (call.name === 'read_file') {
-          const rel = String((call.args as any)?.path || '');
-          filesRead.push(rel);
-          return { name: call.name, result: readFile(rel, workspacePath).slice(0, 6000) };
-        }
-        return { name: call.name, result: '[ERROR] unknown tool' };
-      });
-      turn = await session.sendToolResults(results);
-    }
+    // "text" or "text|action". The action vocabulary is ours (it is what the app
+    // can actually carry out); which reply maps to which is the model's call.
+    const ACTIONS = new Set(['draft_docs', 'start_working']);
+    const { body, rest } = extractBlock(text, 'REPLIES');
+    const suggestedReplies = (body ? body.split('\n') : [])
+      .map(line => line.replace(/^[-*\d.)\s]+/, '').trim())
+      .filter(Boolean)
+      .map(line => {
+        const cut = line.lastIndexOf('|');
+        if (cut === -1) return { text: line, action: null as string | null };
+        const action = line.slice(cut + 1).trim();
+        return ACTIONS.has(action)
+          ? { text: line.slice(0, cut).trim(), action }
+          : { text: line, action: null };
+      })
+      .filter(r => r.text)
+      .slice(0, 4);
 
     res.json({
-      summary: turn.text || '(no summary returned)',
-      filesRead: [...new Set(filesRead)],
+      summary: rest || '(no summary returned)',
+      suggestedReplies,
+      filesRead,
+      model: getProvider().modelLabel,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- PM drafts the memory docs — AGENTIC, read-only until the CEO approves ---
+// The onboarding screen used to SHOW a hardcoded description of each doc, and
+// "approving" it wrote nothing: /api/init-project later created the same generic
+// placeholder regardless of what the CEO saw. Here the model actually reads the
+// project and writes real drafts; nothing lands on disk until the CEO approves
+// each one (the frontend then PUTs it to /api/doc).
+app.post('/api/pm/draft-docs', async (req, res) => {
+  const workspacePath = expandHome(req.body?.workspacePath);
+  const problem = checkWorkspace(workspacePath);
+  if (problem) return res.status(400).json({ error: problem });
+
+  const KNOWN_DOCS = ['PRD.md', 'SOP.md', 'Dev log.md'];
+  // An explicit list pins what to draft; omitting it leaves the choice to the
+  // model, which has just read the repo and knows which of these actually exist.
+  const requested: string[] = Array.isArray(req.body?.docs) && req.body.docs.length
+    ? req.body.docs.map(String).filter((d: string) => KNOWN_DOCS.includes(d))
+    : [];
+  const langName = languageName(req.body?.lang);
+
+  const system = `You are the PM (lead agent) of Chaperone for THIS project. The CEO asked you to draft the long-term memory documents this project is missing.
+
+First, explore with your READ-ONLY tools — list_files, then read what tells you what this project is (README, package.json, docs/*, key source and config). Do not guess about anything you could read.
+
+${requested.length
+    ? `Then draft ONLY these documents: ${requested.join(', ')}.`
+    : `Then decide which of PRD.md, SOP.md and Dev log.md this project is actually missing — check the root, docs/ and .chaperone/ before deciding — and draft only those. If it already has all three, draft nothing and say so in one line.`}
+
+Ground every draft in what you actually read. A PRD states what THIS product is, its goals, non-goals, stack and open questions — not a generic template. An SOP states the conventions this repo actually follows (branch naming, commit format, test and style conventions) as evidenced by its git history, config files and existing code. A Dev log starts effectively empty; say so rather than inventing history.
+
+Return each document in its own block, using the exact file name as the tag:
+<<<DOC:PRD.md>>>
+# ...markdown body...
+<<<END_DOC>>>
+
+Output nothing outside those blocks.${langName ? `\n\nIMPORTANT: Write the documents in ${langName}.` : ''}`;
+
+  try {
+    const { text, filesRead } = await runExploreLoop(
+      system,
+      requested.length
+        ? `Explore this project now, then draft: ${requested.join(', ')}.`
+        : 'Explore this project now, then draft whichever memory documents it is missing.',
+      workspacePath,
+    );
+
+    const drafts: { name: string; content: string }[] = [];
+    for (const name of (requested.length ? requested : KNOWN_DOCS)) {
+      const re = new RegExp(`<<<DOC:${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>>>([\\s\\S]*?)<<<END_DOC>>>`);
+      const m = text.match(re);
+      if (m && m[1].trim()) drafts.push({ name, content: m[1].trim() });
+    }
+
+    // No drafts is a legitimate outcome when the project already has all three —
+    // the model says so instead. Report that rather than treating it as failure.
+    res.json({
+      drafts,
+      note: drafts.length === 0 ? (text.trim().slice(0, 400) || 'Nothing to draft.') : '',
+      filesRead,
       model: getProvider().modelLabel,
     });
   } catch (err: any) {
