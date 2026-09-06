@@ -540,7 +540,7 @@ function Sidebar({
 /* TopBar — mission title + pending/branches/cost chips on the right. */
 function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', startedAt, providerInfo, onSwitchProvider, onOpenSettings }: {
   title: string; pending?: number; branches?: number; model?: string; startedAt?: string;
-  providerInfo?: { active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null;
+  providerInfo?: { active: string; current: string | null; available: { id: string; label: string; ready: boolean }[] } | null;
   onSwitchProvider?: (id: string) => void;
   onOpenSettings?: () => void;
 }) {
@@ -2211,7 +2211,7 @@ const App: React.FC = () => {
   }, []);
   const [profileName, setProfileName] = useLocalStorage<string>('ac_profile_name', '');
   // S7: provider selection state.
-  const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
+  const [providerInfo, setProviderInfo] = useState<{ active: string; current: string | null; ready?: boolean; available: { id: string; label: string; ready: boolean }[] } | null>(null);
   const loadProvider = () => {
     fetch(`${API_BASE}/api/provider`).then(r => r.json())
       .then(d => { if (d.available) setProviderInfo(d); }).catch(() => {});
@@ -3380,7 +3380,9 @@ const App: React.FC = () => {
                 <span style={{ fontSize: 10, width: 10, color: 'var(--accent-pm)' }}>{providerInfo.active === 'auto' ? '●' : ''}</span>
                 <span style={{ fontSize: 12.5, fontWeight: providerInfo.active === 'auto' ? 700 : 500 }}>Auto</span>
                 <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                  use whichever I have a key for{providerInfo.active === 'auto' ? ` — now ${providerInfo.current}` : ''}
+                  {providerInfo.current
+                    ? `use whichever I have a key for${providerInfo.active === 'auto' ? ` — now ${providerInfo.current}` : ''}`
+                    : 'use whichever I have a key for — none yet, add one below'}
                 </span>
               </div>
             )}
@@ -3634,7 +3636,7 @@ const App: React.FC = () => {
           <BottomBar
             usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
-            model={providerInfo?.current || config.defaultModel}
+            model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel}
             hitlPending={0}
             extra="no project · waiting for you to choose"
           />
@@ -3687,7 +3689,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={providerInfo?.current || config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -3803,7 +3805,7 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo?.current || config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
       {settingsModal}
       {usageModal}
@@ -3863,7 +3865,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={providerInfo?.current || config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
@@ -3990,7 +3992,7 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo?.current || config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
         </div>
       {settingsModal}
       {usageModal}
@@ -4018,7 +4020,7 @@ const App: React.FC = () => {
           onSettings={() => setShowSettings(true)}
         />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={providerInfo?.current || config.defaultModel} />
+          <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             {/* hideDocs: PM tabs only appear once user has approved workflow docs */}
@@ -4118,7 +4120,7 @@ const App: React.FC = () => {
           <BottomBar
             usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
-            model={providerInfo?.current || config.defaultModel}
+            model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel}
             hitlPending={0}
             extra={docsReady ? 'project ready · 0 missions · PM idle' : 'blank project · waiting for your first brief'}
           />
@@ -4182,7 +4184,7 @@ const App: React.FC = () => {
           })()}
           pending={totalHitl}
           branches={activeMission ? activeMission.assignments.length : 0}
-          model={providerInfo?.current || config.defaultModel}
+          model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel}
           startedAt={activeMission?.startedAt}
         />
 
@@ -4754,7 +4756,7 @@ const App: React.FC = () => {
         <BottomBar
           usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
           backendStatus={backendStatus}
-          model={providerInfo?.current || config.defaultModel}
+          model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel}
           hitlPending={totalHitl}
           extra={activeMission ? `mission · ${activeMission.assignments.length} workers · ${totalHitl} hitl pending` : `PM panel · ${missions.filter(m => m.status === 'running').length} mission running · ${totalHitl} hitl pending`}
         />

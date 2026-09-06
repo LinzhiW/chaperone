@@ -4,7 +4,7 @@ import { simpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getProvider, setProviderOverride, getProviderOverride, availableProviders, ProviderId, setUsageRecorder } from './providers';
+import { getProvider, setProviderOverride, getProviderOverride, availableProviders, anyProviderReady, ProviderId, setUsageRecorder } from './providers';
 import { loadRates, RATES_CHECKED, PRICING_SOURCES, effectiveRates, ratesFilePath } from './pricing';
 import { loadUsage, recordUsage, totals, totalsForScope, byModel, recentEntries } from './usage';
 import { ChatSession } from './providers/types';
@@ -1729,9 +1729,14 @@ Rules:
 
 // --- S7: multi-provider selection (runtime switch) ---
 app.get('/api/provider', (_req, res) => {
+  const ready = anyProviderReady();
   res.json({
     active: getProviderOverride(),
-    current: getProvider().modelLabel,
+    // Null rather than a model name when nothing is configured: the fallback
+    // provider always has a label, and reporting it made the UI claim an engine
+    // the user does not actually have.
+    current: ready ? getProvider().modelLabel : null,
+    ready,
     available: availableProviders(),
   });
 });

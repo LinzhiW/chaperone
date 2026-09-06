@@ -74,6 +74,16 @@ function metered(p: ModelProvider, scope: string): ModelProvider {
 let onUsage: ((model: string, scope: string, usage: TokenUsage) => void) | null = null;
 export function setUsageRecorder(fn: (model: string, scope: string, usage: TokenUsage) => void) { onUsage = fn; }
 
+/**
+ * Is any provider actually usable? pickProvider() always returns something —
+ * it falls through to Gemini — so modelLabel names a model even when no key
+ * exists anywhere. Reporting that as the current engine told users they had
+ * Gemini while every call failed for want of a key.
+ */
+export function anyProviderReady(): boolean {
+  return availableProviders().some(p => p.ready);
+}
+
 /** @param scope what the spend is for — 'pm-chat', 'explore', `mission:<id>`… */
 export function getProvider(scope = 'other'): ModelProvider {
   return metered(pickProvider(), scope);
