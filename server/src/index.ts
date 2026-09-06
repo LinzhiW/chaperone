@@ -11,10 +11,21 @@ import { exec, execFile } from 'child_process';
 import dotenv from 'dotenv';
 import { shouldUseSearchGrounding, generateContentWithGoogleSearch } from './utils/googleSearchGrounding';
 
-dotenv.config();
+// Where the .env lives. In `npm run dev` this is the server/ directory (the
+// launcher sets cwd there). In the packaged desktop app the working directory is
+// wherever the OS started the executable, which is read-only on some platforms —
+// so the shell passes a writable per-user location via CHAPERONE_DATA_DIR and we
+// keep credentials there instead.
+export const DATA_DIR = process.env.CHAPERONE_DATA_DIR || process.cwd();
+export const ENV_PATH = path.join(DATA_DIR, '.env');
+
+dotenv.config({ path: ENV_PATH });
 
 const app = express();
-const port = 3005;
+// 0 asks the OS for any free port. The desktop shell needs this — it cannot
+// assume 3005 is free on a user's machine — and reads the real port back from
+// the listen callback. Plain `npm run dev` keeps the documented 3005.
+const port = Number(process.env.PORT ?? 3005);
 
 app.use(cors());
 app.use(express.json());
@@ -217,16 +228,75 @@ app.get('/api/files', (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-app.post('/api/config', (req, res) => {
-  const { googleKey } = req.body;
-  if (googleKey) {
-    const envPath = path.join(process.cwd(), '.env');
-    fs.writeFileSync(envPath, `GEMINI_API_KEY=${googleKey}\nGEMINI_MODEL=${getModelId()}\n`);
-    process.env.GEMINI_API_KEY = googleKey;
-    res.json({ success: true, message: 'Key updated' });
-  } else {
-    res.status(400).json({ error: 'Key required' });
+/**
+ * Update a .env file in place, touching only the given keys.
+ *
+ * Deliberately a read-modify-write rather than a rewrite: this endpoint used to
+ * do `writeFileSync(envPath, 'GEMINI_API_KEY=...')`, which silently wiped every
+ * other variable in the file — so saving a Gemini key from the UI destroyed the
+ * user's ANTHROPIC_API_KEY and OPENAI_API_KEY. Comments and unrelated lines are
+ * preserved; an existing assignment is replaced in place, a new one appended.
+ */
+function upsertEnvFile(updates: Record<string, string>) {
+  const envPath = ENV_PATH;
+  let lines: string[] = [];
+  try { lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/); } catch { /* no .env yet */ }
+
+  // Trim the trailing blank line the file ends with *before* appending, or every
+  // newly added variable lands after a stray empty line.
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+
+  for (const [key, value] of Object.entries(updates)) {
+    const idx = lines.findIndex(l => l.trimStart().startsWith(`${key}=`));
+    if (idx >= 0) lines[idx] = `${key}=${value}`;
+    else lines.push(`${key}=${value}`);
   }
+
+  fs.writeFileSync(envPath, lines.join('\n') + '\n');
+}
+
+// Runtime provider credentials. Accepts any subset of the three providers, so
+// "bring your own model" works from the UI instead of only by hand-editing .env.
+// `googleKey` is the original field name, kept so older clients keep working.
+app.post('/api/config', (req, res) => {
+  const b = req.body || {};
+  const incoming: Record<string, string | undefined> = {
+    GEMINI_API_KEY: b.googleKey ?? b.geminiKey,
+    GEMINI_MODEL: b.geminiModel,
+    ANTHROPIC_API_KEY: b.anthropicKey,
+    ANTHROPIC_MODEL: b.anthropicModel,
+    OPENAI_API_KEY: b.openaiKey,
+    OPENAI_MODEL: b.openaiModel,
+    CUSTOM_API_KEY: b.customKey,
+    CUSTOM_BASE_URL: b.customBaseUrl,
+    CUSTOM_MODEL: b.customModel,
+    CUSTOM_LABEL: b.customLabel,
+  };
+
+  const updates: Record<string, string> = {};
+  for (const [envName, value] of Object.entries(incoming)) {
+    if (typeof value === 'string' && value.trim()) updates[envName] = value.trim();
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update — send at least one key or model' });
+  }
+
+  // Apply to the live process first so the next getProvider() call picks it up
+  // even if the disk write fails (read-only checkout, permissions).
+  for (const [envName, value] of Object.entries(updates)) process.env[envName] = value;
+
+  try {
+    upsertEnvFile(updates);
+  } catch (err) {
+    return res.json({
+      success: true, persisted: false,
+      updated: Object.keys(updates),
+      message: 'Applied for this session, but could not write .env',
+    });
+  }
+
+  res.json({ success: true, persisted: true, updated: Object.keys(updates) });
 });
 
 app.post('/api/approve-action', (req, res) => {
@@ -1404,7 +1474,10 @@ app.get('/api/provider', (_req, res) => {
 
 app.post('/api/provider', (req, res) => {
   const id = String(req.body?.provider || '') as ProviderId;
-  if (!['auto', 'claude', 'openai', 'gemini'].includes(id)) return res.status(400).json({ error: 'Invalid provider' });
+  // Derived from the registry rather than a second hardcoded list — the two drifted
+  // once already, which silently made a newly added engine unselectable.
+  const valid = ['auto', ...availableProviders().map(p => p.id)];
+  if (!valid.includes(id)) return res.status(400).json({ error: 'Invalid provider' });
   if (id !== 'auto') {
     const avail = availableProviders().find(p => p.id === id);
     if (!avail?.ready) return res.status(400).json({ error: `No API key for ${id}` });
@@ -1481,4 +1554,11 @@ app.post('/api/worktree/remove', async (req, res) => {
   }
 });
 
-app.listen(port, () => console.log(`Backend at ${port}`));
+// Print the bound port on a line the desktop shell parses. With port 0 the OS
+// picks the port, so this is the only way the shell learns where to point the UI.
+const server = app.listen(port, () => {
+  const addr = server.address();
+  const actual = typeof addr === 'object' && addr ? addr.port : port;
+  console.log(`Backend at ${actual}`);
+  console.log(`CHAPERONE_PORT=${actual}`);
+});

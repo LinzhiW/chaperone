@@ -5,6 +5,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, ToolResult } from './types';
 
+// Same budget the Claude/OpenAI adapters use — these calls often go through a
+// local proxy/VPN and the SDK default is short enough to cut off real work.
+const REQUEST_TIMEOUT_MS = 120000;
+
 /** Normalize a Gemini result into our common ModelTurn shape. */
 function toTurn(result: any): ModelTurn {
   const response = result.response;
@@ -49,13 +53,13 @@ export class GeminiProvider implements ModelProvider {
       model: this.modelId,
       ...(opts.tools ? { tools: [{ functionDeclarations: opts.tools }] } : {}),
       ...(opts.system ? { systemInstruction: opts.system } : {}),
-    } as any);
+    } as any, { timeout: REQUEST_TIMEOUT_MS });
     const chat = model.startChat(opts.history ? { history: opts.history } : {});
     return new GeminiChatSession(chat);
   }
 
   async generateOnce(prompt: string): Promise<string> {
-    const model = this.genAI.getGenerativeModel({ model: this.modelId });
+    const model = this.genAI.getGenerativeModel({ model: this.modelId }, { timeout: REQUEST_TIMEOUT_MS });
     const result = await model.generateContent(prompt);
     return result.response.text().trim();
   }

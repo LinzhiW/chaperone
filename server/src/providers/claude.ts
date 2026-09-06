@@ -9,6 +9,19 @@ import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, ToolDef, ToolR
 
 const DEFAULT_MAX_TOKENS = 16000;
 
+// Adaptive thinking measurably helps multi-step tool use, and on Opus 4.7/4.8 and
+// Sonnet 5 *omitting* `thinking` means the model does not think at all. But this is
+// a bring-your-own-model tool: the user can put any string in ANTHROPIC_MODEL, and
+// older models (Haiku 4.5 and earlier) reject `adaptive` with a 400. So we ask for
+// it, and if a model refuses, we remember that model and stop asking.
+const noAdaptiveThinking = new Set<string>();
+
+function isThinkingRejection(err: any): boolean {
+  if (err?.status !== 400) return false;
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('thinking');
+}
+
 /**
  * Convert our provider-agnostic ToolDef (Gemini-shaped schema with uppercase
  * JSON-schema types like "OBJECT"/"STRING") into the Anthropic tool shape
@@ -93,13 +106,26 @@ class ClaudeChatSession implements ChatSession {
   }
 
   private async run(): Promise<ModelTurn> {
-    const message = await this.client.messages.create({
+    const params: Anthropic.MessageCreateParamsNonStreaming = {
       model: this.model,
       max_tokens: DEFAULT_MAX_TOKENS,
       ...(this.system ? { system: this.system } : {}),
       ...(this.tools ? { tools: this.tools } : {}),
       messages: this.messages,
-    });
+    };
+
+    let message: Anthropic.Message;
+    if (noAdaptiveThinking.has(this.model)) {
+      message = await this.client.messages.create(params);
+    } else {
+      try {
+        message = await this.client.messages.create({ ...params, thinking: { type: 'adaptive' } });
+      } catch (err) {
+        if (!isThinkingRejection(err)) throw err;
+        noAdaptiveThinking.add(this.model);
+        message = await this.client.messages.create(params);
+      }
+    }
 
     // Persist the assistant turn so the conversation stays coherent and any
     // tool_use blocks survive for the matching tool_result on the next call.
@@ -140,7 +166,10 @@ export class ClaudeProvider implements ModelProvider {
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new Anthropic({ apiKey });
+    // Match the OpenAI adapter: generous timeout + retries, because model calls
+    // here often go through a local proxy/VPN and can be slow or flaky.
+    // (TypeScript SDK timeouts are milliseconds.)
+    this.client = new Anthropic({ apiKey, timeout: 120000, maxRetries: 4 });
     this.model = model;
     this.modelLabel = model;
   }
