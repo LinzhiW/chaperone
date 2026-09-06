@@ -3,7 +3,7 @@
 // GPT handles non-English (e.g. Chinese) well, unlike gemini-2.5-flash.
 
 import OpenAI from 'openai';
-import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, ToolDef, ToolResult } from './types';
+import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, TokenUsage, ToolDef, ToolResult } from './types';
 
 // Our TOOL_DEFS use Gemini-style uppercase JSON-schema types (OBJECT/STRING).
 // OpenAI wants standard lowercase JSON Schema — recursively lowercase `type`.
@@ -55,9 +55,12 @@ class OpenAIChatSession implements ChatSession {
     const msg: any = resp.choices[0].message;
     this.messages.push(msg);
     this.lastToolCalls = (msg.tool_calls || []).map((c: any) => ({ ...c, _used: false }));
+    const u: any = resp.usage;
     return {
       text: msg.content || '',
       toolCalls: (msg.tool_calls || []).map((tc: any) => ({ name: tc.function.name, args: safeParse(tc.function.arguments) })),
+      ...(u ? { usage: { input: u.prompt_tokens || 0, output: u.completion_tokens || 0,
+                         ...(u.prompt_tokens_details?.cached_tokens ? { cached: u.prompt_tokens_details.cached_tokens } : {}) } } : {}),
     };
   }
 
@@ -103,11 +106,15 @@ export class OpenAIProvider implements ModelProvider {
     return new OpenAIChatSession(this.client, this.model, opts.system, toOpenAITools(opts.tools), opts.history);
   }
 
-  async generateOnce(prompt: string): Promise<string> {
+  async generateOnce(prompt: string): Promise<{ text: string; usage?: TokenUsage }> {
     const resp = await this.client.chat.completions.create({
       model: this.model,
       messages: [{ role: 'user', content: prompt }],
     });
-    return (resp.choices[0].message.content || '').trim();
+    const u: any = resp.usage;
+    return {
+      text: (resp.choices[0].message.content || '').trim(),
+      ...(u ? { usage: { input: u.prompt_tokens || 0, output: u.completion_tokens || 0 } } : {}),
+    };
   }
 }

@@ -2,7 +2,7 @@
 // Priority: Claude (ANTHROPIC_API_KEY) > OpenAI (OPENAI_API_KEY) > Gemini (default).
 // Constructed fresh each call so a runtime key change (POST /api/config) is picked up.
 
-import { ModelProvider } from './types';
+import { ModelProvider, TokenUsage } from './types';
 import { GeminiProvider } from './gemini';
 import { ClaudeProvider } from './claude';
 import { OpenAIProvider } from './openai';
@@ -46,7 +46,40 @@ export function availableProviders(): { id: Exclude<ProviderId, 'auto'>; label: 
   ];
 }
 
-export function getProvider(): ModelProvider {
+/**
+ * Wrap a provider so every call it makes is metered. Doing it here rather than at
+ * each call site means a new endpoint cannot forget to report what it spent — the
+ * only way to reach a model is through this factory.
+ */
+function metered(p: ModelProvider, scope: string): ModelProvider {
+  const record = (usage?: TokenUsage) => {
+    if (usage) onUsage?.(p.modelLabel, scope, usage);
+  };
+  return {
+    id: p.id,
+    modelLabel: p.modelLabel,
+    startChat(opts) {
+      const session = p.startChat(opts);
+      return {
+        async sendMessage(text) { const t = await session.sendMessage(text); record(t.usage); return t; },
+        async sendToolResults(results) { const t = await session.sendToolResults(results); record(t.usage); return t; },
+      };
+    },
+    async generateOnce(prompt) { const r = await p.generateOnce(prompt); record(r.usage); return r; },
+  };
+}
+
+// Set once at startup by the server; kept as a hook so this module stays free of
+// filesystem and bookkeeping concerns.
+let onUsage: ((model: string, scope: string, usage: TokenUsage) => void) | null = null;
+export function setUsageRecorder(fn: (model: string, scope: string, usage: TokenUsage) => void) { onUsage = fn; }
+
+/** @param scope what the spend is for — 'pm-chat', 'explore', `mission:<id>`… */
+export function getProvider(scope = 'other'): ModelProvider {
+  return metered(pickProvider(), scope);
+}
+
+function pickProvider(): ModelProvider {
   const anthropicKey = getAnthropicKey();
   const openaiKey = getOpenAIKey();
 

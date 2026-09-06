@@ -11,6 +11,12 @@ release/
 # Vite cache
 .vite/
 
+# Per-install runtime data written next to the backend's .env
+usage.json
+rates.json
+**/usage.json
+**/rates.json
+
 # Environment & secrets
 .env
 .env.local

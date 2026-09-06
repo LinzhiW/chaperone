@@ -22,10 +22,24 @@ export interface ToolResult {
   result: string;
 }
 
+/**
+ * Tokens a single request actually consumed, as reported by the provider.
+ * This is measured, not estimated — cost estimates are derived from it, but the
+ * counts themselves are ground truth and are shown even when we have no price
+ * for the model.
+ */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  /** Input tokens served from cache, where the provider distinguishes them. */
+  cached?: number;
+}
+
 /** One model turn, normalized: either plain text, tool calls, or both. */
 export interface ModelTurn {
   text: string;
   toolCalls: ToolCall[];
+  usage?: TokenUsage;
 }
 
 export interface StartChatOptions {
@@ -49,6 +63,6 @@ export interface ModelProvider {
   readonly modelLabel: string;
   /** start a multi-turn chat (worker loop, PM chat) */
   startChat(opts: StartChatOptions): ChatSession;
-  /** one-shot generation (reviewer) */
-  generateOnce(prompt: string): Promise<string>;
+  /** one-shot generation (reviewer). Returns usage so it can be metered like chat turns. */
+  generateOnce(prompt: string): Promise<{ text: string; usage?: TokenUsage }>;
 }

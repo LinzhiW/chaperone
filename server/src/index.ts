@@ -4,7 +4,9 @@ import { simpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getProvider, setProviderOverride, getProviderOverride, availableProviders, ProviderId } from './providers';
+import { getProvider, setProviderOverride, getProviderOverride, availableProviders, ProviderId, setUsageRecorder } from './providers';
+import { loadRates, RATES_CHECKED, PRICING_SOURCES, effectiveRates, ratesFilePath } from './pricing';
+import { loadUsage, recordUsage, totals, totalsForScope, byModel, recentEntries } from './usage';
 import { ChatSession } from './providers/types';
 import * as store from './persistence';
 import { exec, execFile } from 'child_process';
@@ -20,6 +22,11 @@ export const DATA_DIR = process.env.CHAPERONE_DATA_DIR || process.cwd();
 export const ENV_PATH = path.join(DATA_DIR, '.env');
 
 dotenv.config({ path: ENV_PATH });
+
+// Metering has to be armed before anything can call a model.
+loadRates(DATA_DIR);
+loadUsage(DATA_DIR);
+setUsageRecorder(recordUsage);
 
 const app = express();
 // 0 asks the OS for any free port. The desktop shell needs this — it cannot
@@ -471,7 +478,7 @@ app.get('/api/execute-mission', async (req, res) => {
     ].join('\n');
 
     // Provider-agnostic chat session (TODO P1). Pipeline owns the loop/HITL/tools.
-    const provider = getProvider();
+    const provider = getProvider(`mission:${taskId}`);
     const session = provider.startChat({ system: systemInstruction, tools: TOOL_DEFS });
 
     // Store session so nudge endpoint can continue the conversation later
@@ -628,7 +635,7 @@ Rules:
     // Always route through the provider. (The old grounded-search path passed an
     // unsupported role:'system' to Gemini, which errored on some messages.)
     const groundingSources: any = undefined;
-    const session = getProvider().startChat({ system: systemPrompt, history: history || [] });
+    const session = getProvider('pm-chat').startChat({ system: systemPrompt, history: history || [] });
     const turn = await session.sendMessage(message);
     const text = turn.text;
 
@@ -904,7 +911,7 @@ If a branch has no diff, include one "note" annotation saying so.`;
   send('log', { log: '[REVIEWER] Analyzing with Gemini…' });
 
   try {
-    const text = await getProvider().generateOnce(prompt);
+    const { text } = await getProvider('pm-plan').generateOnce(prompt);
 
     send('log', { log: '[REVIEWER] Analysis complete. Parsing annotations…' });
 
@@ -996,7 +1003,7 @@ ${pkg || '(no package.json found)'}
 
 === docs/ files ===
 ${docs.join(', ') || '(no docs/ folder)'}`;
-    const summary = await getProvider().generateOnce(prompt);
+    const { text: summary } = await getProvider('reviewer').generateOnce(prompt);
     res.json({ summary });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1104,7 +1111,7 @@ Using ONLY the real files above, output a Parallelization Plan as STRICT JSON (n
   "nextStep": "<the single concrete next action>"
 }${langDirective}`;
 
-    const raw = await getProvider().generateOnce(prompt);
+    const { text: raw } = await getProvider('pm-plan').generateOnce(prompt);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return res.status(502).json({ error: 'PM did not return JSON', raw: raw.slice(0, 400) });
     let plan: any;
@@ -1168,7 +1175,7 @@ async function runExploreLoop(system: string, kickoff: string, workspacePath: st
   const tree = walkTree(workspacePath, 600, 6);
   const filesRead: string[] = [];
 
-  const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
+  const session = getProvider('explore').startChat({ system, tools: EXPLORE_TOOLS });
   let turn = await session.sendMessage(kickoff);
 
   for (let step = 0; step < 16; step++) {
@@ -1364,7 +1371,7 @@ If this project has NO real progress tracking (no PROGRESS.md / MVP.md / status 
 Format as short scannable Markdown with bold mini-headings. Be specific — cite real file names and real slice/milestone names from the docs. End with ONE natural follow-up question about what the CEO wants to do next.${langName ? `\n\nIMPORTANT: Write your entire reply in ${langName}. Not English.` : ''}`;
 
   try {
-    const session = getProvider().startChat({ system, tools: EXPLORE_TOOLS });
+    const session = getProvider('draft-docs').startChat({ system, tools: EXPLORE_TOOLS });
     let turn = await session.sendMessage('Check where this project stands now using your tools, then report to me.');
 
     for (let step = 0; step < 16; step++) {
@@ -1433,7 +1440,7 @@ Rules:
 When done, tell the CEO in a short bullet list exactly what you saved and to which files (so they can clear with confidence).${langName ? `\n\nWrite your final reply in ${langName}.` : ''}`;
 
   try {
-    const session = getProvider().startChat({ system, tools: CHECKPOINT_TOOLS });
+    const session = getProvider('progress-report').startChat({ system, tools: CHECKPOINT_TOOLS });
     let turn = await session.sendMessage(`Here is the conversation to checkpoint:\n\n${transcript.slice(0, 24000)}\n\nPreserve what matters now, then report what you saved.`);
 
     for (let step = 0; step < 12; step++) {
@@ -1508,7 +1515,7 @@ app.post('/api/pm/audit', async (req, res) => {
 
   try {
     // ── Phase 1: PM decides the audit plan ──────────────────────────────────
-    const planSession = getProvider().startChat({
+    const planSession = getProvider('pm-plan').startChat({
       system: `You are the PM. Plan a read-only L1 audit for this project.
 
 Given the file tree, decide how many read-only auditors to dispatch and what each should focus on.
@@ -1539,7 +1546,7 @@ Rules:
     // ── Phase 2: Fan-out — all auditors run in parallel ─────────────────────
     const auditorResults = await Promise.all(auditorSpecs.map(async (spec) => {
       const filesRead: string[] = [];
-      const session = getProvider().startChat({
+      const session = getProvider('pm-plan').startChat({
         system: `You are ${spec.id}, a read-only L1 auditor. Your focus: ${spec.focus}.
 
 Use your tools to explore the relevant parts of this project. Read the files that matter to your domain.
@@ -1584,7 +1591,7 @@ Read-only only — do not suggest changes, just report what you find.`,
       `=== ${r.id} (focus: ${r.focus}) ===\nFiles read: ${r.filesRead.join(', ') || '(none)'}\n\n${r.findings}`
     ).join('\n\n---\n\n');
 
-    const consolidateSession = getProvider().startChat({
+    const consolidateSession = getProvider('pm-plan').startChat({
       system: `${PM_MODEL_PREAMBLE}
 
 You just received read-only audit reports from ${auditorResults.length} auditor(s). Now produce your PM dispatch assessment — NOT a generic tech audit. Apply the operating model above and structure it EXACTLY like this:
@@ -1726,6 +1733,19 @@ app.get('/api/provider', (_req, res) => {
     active: getProviderOverride(),
     current: getProvider().modelLabel,
     available: availableProviders(),
+  });
+});
+
+// What the models have actually cost. Token counts are measured; the dollar
+// figure is an estimate from a rate table the user can correct.
+app.get('/api/usage', (req, res) => {
+  const scope = req.query.scope as string | undefined;
+  res.json({
+    total: totals(),
+    ...(scope ? { scope: totalsForScope(scope) } : {}),
+    byModel: byModel(),
+    recent: recentEntries(30),
+    rates: { checkedOn: RATES_CHECKED, sources: PRICING_SOURCES, file: ratesFilePath(), values: effectiveRates() },
   });
 });
 

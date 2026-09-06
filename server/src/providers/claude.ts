@@ -5,7 +5,7 @@
 // HITL, tools, and skills.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, ToolDef, ToolResult } from './types';
+import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, TokenUsage, ToolDef, ToolResult } from './types';
 
 const DEFAULT_MAX_TOKENS = 16000;
 
@@ -67,7 +67,13 @@ function toTurn(message: Anthropic.Message): ModelTurn {
       toolCalls.push({ name: block.name, args: (block.input as Record<string, any>) || {} });
     }
   }
-  return { text, toolCalls };
+  const u = message.usage;
+  return {
+    text,
+    toolCalls,
+    ...(u ? { usage: { input: u.input_tokens || 0, output: u.output_tokens || 0,
+                       ...(u.cache_read_input_tokens ? { cached: u.cache_read_input_tokens } : {}) } } : {}),
+  };
 }
 
 /**
@@ -184,16 +190,21 @@ export class ClaudeProvider implements ModelProvider {
     );
   }
 
-  async generateOnce(prompt: string): Promise<string> {
+  async generateOnce(prompt: string): Promise<{ text: string; usage?: TokenUsage }> {
     const message = await this.client.messages.create({
       model: this.model,
       max_tokens: DEFAULT_MAX_TOKENS,
       messages: [{ role: 'user', content: prompt }],
     });
-    return message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-      .trim();
+    const u = message.usage;
+    return {
+      text: message.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('')
+        .trim(),
+      ...(u ? { usage: { input: u.input_tokens || 0, output: u.output_tokens || 0,
+                         ...(u.cache_read_input_tokens ? { cached: u.cache_read_input_tokens } : {}) } } : {}),
+    };
   }
 }

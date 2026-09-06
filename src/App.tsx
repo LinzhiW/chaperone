@@ -522,8 +522,22 @@ function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', 
 }
 
 /* BottomBar — mono status footer. */
-function BottomBar({ backendStatus, model, hitlPending, extra }: {
+/** "$0.0043" / "<$0.0001" — spend here is usually fractions of a cent. */
+function formatUsd(usd: number | null | undefined): string {
+  if (usd === null || usd === undefined) return '—';
+  if (usd === 0) return '$0';
+  if (usd < 0.0001) return '<$0.0001';
+  if (usd < 1) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+const formatTokens = (n: number): string =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+
+function BottomBar({ backendStatus, model, hitlPending, extra, usage, onOpenUsage }: {
   backendStatus: 'online' | 'offline'; model: string; hitlPending: number; extra?: string;
+  usage?: { usd: number; calls: number; input: number; output: number; unpricedCalls: number } | null;
+  onOpenUsage?: () => void;
 }) {
   return (
     <div className="wf-bottom">
@@ -533,6 +547,14 @@ function BottomBar({ backendStatus, model, hitlPending, extra }: {
       </span>
       <span>model: {model}</span>
       <span>hitl: pending {hitlPending}</span>
+      {/* Running spend, always visible. Someone using their own API key should
+          never have to wonder what a run just cost them. */}
+      {usage && usage.calls > 0 && (
+        <span onClick={onOpenUsage} title="what the models have cost so far — click for the breakdown"
+          style={{ cursor: onOpenUsage ? 'pointer' : 'default', textDecoration: onOpenUsage ? 'underline dotted' : 'none' }}>
+          spend: {usage.unpricedCalls === usage.calls ? `${formatTokens(usage.input + usage.output)} tok` : `~${formatUsd(usage.usd)}`}
+        </span>
+      )}
       <span style={{ marginLeft: 'auto' }}>{extra || '⌘K · command palette'}</span>
     </div>
   );
@@ -2083,6 +2105,22 @@ const App: React.FC = () => {
   const [fileViewMode, setFileViewMode] = useState<'content' | 'diff'>('diff');
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [usageData, setUsageData] = useState<{
+    total: { input: number; output: number; cached: number; calls: number; usd: number; unpricedCalls: number };
+    byModel: { model: string; totals: { input: number; output: number; calls: number; usd: number; unpricedCalls: number } }[];
+    recent: { at: string; model: string; scope: string; input: number; output: number; usd: number | null }[];
+    rates: { checkedOn: string; sources: Record<string, string> };
+  } | null>(null);
+  const loadUsage = () => {
+    fetch(`${API_BASE}/api/usage`).then(r => r.json()).then(d => { if (d.total) setUsageData(d); }).catch(() => {});
+  };
+  // Cheap and local; refreshed often enough that the figure moves while work runs.
+  useEffect(() => {
+    loadUsage();
+    const t = setInterval(loadUsage, 8000);
+    return () => clearInterval(t);
+  }, []);
   const [profileName, setProfileName] = useLocalStorage<string>('ac_profile_name', '');
   // S7: provider selection state.
   const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
@@ -2959,6 +2997,97 @@ const App: React.FC = () => {
   // ── M1 · Onboarding Screen 0a · Welcome (no project) ──────────────────────
   // 1-to-1 port of Onboarding_Welcome in wf-onboarding.jsx, with tiles
   // reordered per user: Start from scratch / Open folder / Clone GitHub.
+  // ── Spend ──
+  // Token counts are exactly what the providers reported. The dollar figure is an
+  // estimate from a rate table with a date on it, and the panel says so — rates
+  // move, and a confidently wrong number would be worse than an honest estimate.
+  const usageModal = showUsage && usageData && (
+    <div onClick={() => setShowUsage(false)}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 560, maxHeight: '88vh', overflowY: 'auto', background: 'var(--bg-elevated, var(--paper))', borderRadius: 10, padding: '28px 28px 24px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default, var(--rule))' }}>
+
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>What this has cost</div>
+        <div style={{ fontSize: 12, color: 'var(--text-dim, var(--ink-3))', marginBottom: 18 }}>
+          You pay your model provider directly. Chaperone never sees your bill — this is its own count of what it asked for.
+        </div>
+
+        <div style={{ display: 'flex', gap: 20, padding: '14px 16px', borderRadius: 8, background: 'var(--paper-2, rgba(0,0,0,0.04))' }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>~{formatUsd(usageData.total.usd)}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>estimated, all time</div>
+          </div>
+          <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.7 }}>
+            <div>{usageData.total.calls} model calls</div>
+            <div className="mono" style={{ fontSize: 11 }}>
+              {formatTokens(usageData.total.input)} in · {formatTokens(usageData.total.output)} out
+              {usageData.total.cached > 0 && ` · ${formatTokens(usageData.total.cached)} cached`}
+            </div>
+          </div>
+        </div>
+
+        {usageData.total.unpricedCalls > 0 && (
+          <div style={{ fontSize: 11.5, color: 'var(--warn, #b0851f)', marginTop: 10, lineHeight: 1.5 }}>
+            {usageData.total.unpricedCalls} call(s) used a model with no rate on file — their tokens are counted above, their cost isn't.
+          </div>
+        )}
+
+        <div style={{ marginTop: 22 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-label, var(--ink-3))', fontWeight: 700, letterSpacing: 1 }}>BY MODEL</label>
+          <div style={{ marginTop: 8 }}>
+            {usageData.byModel.map(m => (
+              <div key={m.model} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--rule-soft, rgba(0,0,0,0.06))' }}>
+                <span className="mono" style={{ fontSize: 12, flex: 1 }}>{m.model}</span>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                  {formatTokens(m.totals.input)} / {formatTokens(m.totals.output)}
+                </span>
+                <span className="mono" style={{ fontSize: 12, fontWeight: 600, minWidth: 74, textAlign: 'right' }}>
+                  {m.totals.unpricedCalls === m.totals.calls ? '—' : `~${formatUsd(m.totals.usd)}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 22 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-label, var(--ink-3))', fontWeight: 700, letterSpacing: 1 }}>RECENT CALLS</label>
+          <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+            {usageData.recent.map((e, i) => (
+              <div key={`${e.at}-${i}`} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', fontSize: 11.5 }}>
+                <span className="mono" style={{ color: 'var(--ink-3)', minWidth: 52 }}>
+                  {new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.scope}</span>
+                <span className="mono" style={{ color: 'var(--ink-3)' }}>{formatTokens(e.input + e.output)} tok</span>
+                <span className="mono" style={{ minWidth: 68, textAlign: 'right' }}>{e.usd === null ? '—' : `~${formatUsd(e.usd)}`}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--rule-soft, var(--rule))', fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+          Token counts come from the provider and are exact. Prices are a stored table last checked{' '}
+          <strong>{usageData.rates.checkedOn}</strong> — they change, and differ between a provider's own API and a reseller.
+          Correct them in <code className="mono" style={{ fontSize: 11 }}>rates.json</code> next to your settings.
+          {' '}
+          {Object.entries(usageData.rates.sources).map(([k, url], i) => (
+            <React.Fragment key={k}>
+              {i > 0 && ' · '}
+              <a href={url as string} target="_blank" rel="noreferrer" style={{ color: 'var(--pm)', textDecoration: 'underline' }}>{k} pricing ↗</a>
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', marginTop: 22 }}>
+          <button onClick={() => setShowUsage(false)}
+            style={{ flex: 1, background: 'var(--pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Profile ──
   // Deliberately thin. Chaperone has no accounts, no sign-in and no server-side
   // identity, so the only thing that is genuinely *the user's own* right now is
@@ -3347,6 +3476,7 @@ const App: React.FC = () => {
             </div>
           </div>
           <BottomBar
+            usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
             model={config.defaultModel}
             hitlPending={0}
@@ -3354,6 +3484,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {usageModal}
       {profileModal}
       {fileModal}
       {askModal}
@@ -3516,9 +3647,10 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
       {settingsModal}
+      {usageModal}
       {profileModal}
       {fileModal}
       {askModal}
@@ -3702,9 +3834,10 @@ const App: React.FC = () => {
               </div>
             </PMShell>
           </div>
-          <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
+          <BottomBar usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }} backendStatus={backendStatus} model={config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
         </div>
       {settingsModal}
+      {usageModal}
       {profileModal}
       {fileModal}
       {askModal}
@@ -3827,6 +3960,7 @@ const App: React.FC = () => {
             </PMShell>
           </div>
           <BottomBar
+            usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
             backendStatus={backendStatus}
             model={config.defaultModel}
             hitlPending={0}
@@ -3834,6 +3968,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {usageModal}
       {profileModal}
       {fileModal}
       {askModal}
@@ -4426,6 +4561,7 @@ const App: React.FC = () => {
         })()}
         {config.projectPath && <ProgressBoard workspacePath={config.projectPath} />}
         <BottomBar
+          usage={usageData?.total} onOpenUsage={() => { loadUsage(); setShowUsage(true); }}
           backendStatus={backendStatus}
           model={config.defaultModel}
           hitlPending={totalHitl}
@@ -4512,6 +4648,7 @@ const App: React.FC = () => {
       )}
 
       {settingsModal}
+      {usageModal}
       {profileModal}
       {fileModal}
       {askModal}
