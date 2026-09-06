@@ -1749,6 +1749,36 @@ app.get('/api/usage', (req, res) => {
   });
 });
 
+// Ask an OpenAI-compatible endpoint what models the key can actually reach.
+// Model names churn — Moonshot retired the original kimi-k2 line, DeepSeek and
+// Qwen rename things — so shipping a hardcoded list would go stale and send
+// people to a model that no longer exists. Better to ask the provider.
+app.post('/api/provider/models', async (req, res) => {
+  const { baseUrl, key } = req.body || {};
+  if (!baseUrl || !key) return res.status(400).json({ error: 'Need both a base URL and a key' });
+
+  const url = String(baseUrl).replace(/\/+$/, '') + '/models';
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      return res.status(200).json({
+        supported: r.status !== 404,
+        error: `${r.status} ${r.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+        models: [],
+      });
+    }
+    const data: any = await r.json();
+    const models = (Array.isArray(data?.data) ? data.data : [])
+      .map((m: any) => String(m?.id || '')).filter(Boolean).sort();
+    res.json({ supported: true, models });
+  } catch (err: any) {
+    // Not every compatible server implements /models; that is not a failure of
+    // the key, so say so rather than blocking setup.
+    res.json({ supported: false, error: err.message, models: [] });
+  }
+});
+
 app.post('/api/provider', (req, res) => {
   const id = String(req.body?.provider || '') as ProviderId;
   // Derived from the registry rather than a second hardcoded list — the two drifted

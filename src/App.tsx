@@ -62,6 +62,21 @@ const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; default
 ];
 
 /**
+ * One-click setup for the OpenAI-compatible providers people actually ask for.
+ * Only the base URL and the console link are pinned here: both are stable, while
+ * model names churn (Moonshot retired the original kimi-k2 line), so the model is
+ * fetched from the provider instead of hardcoded and left to go stale.
+ */
+const CUSTOM_PRESETS: { label: string; baseUrl: string; keyUrl: string; note?: string }[] = [
+  { label: 'Kimi', baseUrl: 'https://api.moonshot.ai/v1', keyUrl: 'https://platform.moonshot.ai/console/api-keys' },
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', keyUrl: 'https://platform.deepseek.com/api_keys' },
+  { label: 'GLM (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys' },
+  { label: 'Qwen (DashScope)', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com/?apiKey=1' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/keys' },
+  { label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1', keyUrl: 'https://ollama.com/download', note: 'runs on your machine — any key works' },
+];
+
+/**
  * Where to get a key — and the two things that strand people who have never
  * bought API access. An API key comes from a separate developer account, not the
  * chat subscription they may already pay for; and two of the three providers want
@@ -2185,6 +2200,23 @@ const App: React.FC = () => {
   const [draftCustom, setDraftCustom] = useState<{ label: string; baseUrl: string; key: string; model: string }>(
     { label: '', baseUrl: '', key: '', model: '' },
   );
+  const [customModels, setCustomModels] = useState<{ models: string[]; error?: string } | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const fetchCustomModels = async () => {
+    setLoadingModels(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/provider/models`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: draftCustom.baseUrl.trim(), key: draftCustom.key.trim() }),
+      });
+      const d = await res.json();
+      setCustomModels({ models: Array.isArray(d.models) ? d.models : [], error: d.error });
+    } catch {
+      setCustomModels({ models: [], error: 'could not reach the backend' });
+    }
+    setLoadingModels(false);
+  };
+
   const setCustom = (k: 'label' | 'baseUrl' | 'key' | 'model', v: string) =>
     setDraftCustom(p => ({ ...p, [k]: v }));
 
@@ -3339,17 +3371,79 @@ const App: React.FC = () => {
                       {ready ? 'READY' : 'NOT SET'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>
-                    DeepSeek, Kimi, GLM, Qwen, OpenRouter, or a local Ollama / vLLM server. Needs all four fields.
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 6 }}>
+                    Pick one to fill in its address, then paste a key.
                   </div>
+
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {CUSTOM_PRESETS.map(pre => {
+                      const active = draftCustom.baseUrl === pre.baseUrl;
+                      return (
+                        <button key={pre.label} type="button"
+                          onClick={() => { setDraftCustom(c => ({ ...c, label: pre.label, baseUrl: pre.baseUrl })); setCustomModels(null); }}
+                          title={pre.note || pre.baseUrl}
+                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontWeight: active ? 700 : 500,
+                            background: active ? 'var(--accent-pm)' : 'transparent', color: active ? '#fff' : 'var(--text-primary)',
+                            border: `1px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
+                          {pre.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <input value={draftCustom.label} onChange={e => setCustom('label', e.target.value)}
-                    style={box} placeholder={ready ? `name — currently ${info?.label}` : 'name — e.g. DeepSeek'} />
+                    style={box} placeholder={ready ? `name — currently ${info?.label}` : 'name — e.g. Kimi'} />
                   <input value={draftCustom.baseUrl} onChange={e => setCustom('baseUrl', e.target.value)}
-                    style={box} placeholder="base URL — e.g. https://api.deepseek.com/v1" />
+                    style={box} placeholder="base URL — e.g. https://api.moonshot.ai/v1" />
                   <input type="password" autoComplete="off" value={draftCustom.key} onChange={e => setCustom('key', e.target.value)}
                     style={box} placeholder={ready ? '•••••••••••  (leave blank to keep)' : 'API key'} />
-                  <input value={draftCustom.model} onChange={e => setCustom('model', e.target.value)}
-                    style={box} placeholder="model — e.g. deepseek-chat" />
+
+                  {(() => {
+                    const preset = CUSTOM_PRESETS.find(x => x.baseUrl === draftCustom.baseUrl);
+                    return preset ? (
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 5 }}>
+                        <a href={preset.keyUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-pm)', textDecoration: 'underline' }}>
+                          get a {preset.label} key ↗
+                        </a>
+                        {preset.note ? ` — ${preset.note}` : ''}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* Model names change often enough that a hardcoded list would
+                      send people to models that no longer exist — ask the provider. */}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+                    <input value={draftCustom.model} onChange={e => setCustom('model', e.target.value)}
+                      style={{ ...box, marginTop: 0, flex: 1 }} placeholder="model" />
+                    <button type="button" onClick={fetchCustomModels}
+                      disabled={loadingModels || !draftCustom.baseUrl.trim() || !draftCustom.key.trim()}
+                      title={!draftCustom.key.trim() ? 'paste a key first' : 'ask this provider which models your key can use'}
+                      style={{ fontSize: 11, padding: '7px 11px', borderRadius: 5, whiteSpace: 'nowrap',
+                        cursor: (loadingModels || !draftCustom.baseUrl.trim() || !draftCustom.key.trim()) ? 'not-allowed' : 'pointer',
+                        opacity: (loadingModels || !draftCustom.baseUrl.trim() || !draftCustom.key.trim()) ? 0.45 : 1,
+                        background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
+                      {loadingModels ? 'asking…' : 'list models'}
+                    </button>
+                  </div>
+
+                  {customModels?.error && (
+                    <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 5, lineHeight: 1.5 }}>
+                      Couldn't list models ({customModels.error}). That's fine — type the name yourself.
+                    </div>
+                  )}
+                  {customModels?.models && customModels.models.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6, maxHeight: 108, overflowY: 'auto' }}>
+                      {customModels.models.map(m => (
+                        <button key={m} type="button" onClick={() => setCustom('model', m)}
+                          style={{ fontSize: 10.5, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace',
+                            background: draftCustom.model === m ? 'var(--accent-pm)' : 'transparent',
+                            color: draftCustom.model === m ? '#fff' : 'var(--text-muted, var(--ink-2))',
+                            border: `1px solid ${draftCustom.model === m ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })()}
