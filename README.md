@@ -1,6 +1,6 @@
 # Chaperone
 
-**Your AI dev team — run like a company, not a command line.**
+**An AI dev team that works to a process — so its usual mistakes don't become yours.**
 
 Chaperone makes you the founder of an AI software team. You set a goal. A **PM
 agent** plans it and splits it into assignments. Each **Worker** builds its piece
@@ -20,19 +20,27 @@ founders, designers, PMs, indie hackers. You direct; the team builds; you sign o
 
 ## Why it exists
 
-Build several features at once with a single AI agent and it loses the thread —
-context bleeds between tasks and you drown in back-and-forth. Multiple coordinated
-agents solve this, but the tools that can do it live in the terminal and fail one of
-two ways: they make you approve every tiny click, or they run loose in the
-background burning tokens while you have no idea what happened.
+People who can't code can now get software written for them. What they can't do is
+tell when the AI is quietly going wrong — and it goes wrong in the same handful of
+ways every time. It loses the thread across several features at once. It rewrites
+something that already worked. It reports success it did not achieve. It burns
+tokens for an hour with nothing to show. A developer catches these by instinct;
+someone without that instinct only finds out much later, when the project is
+already tangled.
 
-Chaperone answers both. Agents work autonomously *within* a task, pause only for
-genuinely sensitive moves, then **stop at the task boundary and wait for you to
-review and merge**.
+**Chaperone's job is to catch them for you.** The process is the product: an
+operating model the agents work inside, checkpoints where a human has to look, one
+worker per git branch so mistakes stay contained, and a reviewer that reads the
+diffs before anything merges. Not a smarter model — a structure around the model
+that makes its usual failures visible early and cheap to undo.
 
-**Brain in the cloud, hands on your machine.** The model thinks; the work happens
-locally, in your repo, with your own git auth. This is a tool you run — not a
-service you hand your code to.
+The second half is the skills. An agent is only as good as what it has been given
+to work with, so capabilities are equipped onto each worker deliberately and
+visibly, the way you'd staff a role rather than hope a general-purpose assistant
+guesses right.
+
+**You bring your own model key.** Chaperone talks to Claude, OpenAI or Gemini with
+your key; you pay the provider directly and it never sees your bill.
 
 ## Design principles
 

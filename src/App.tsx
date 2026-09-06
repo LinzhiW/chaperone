@@ -52,11 +52,32 @@ const WORKER_COLORS = ['#5d8aa8', '#87a36d', '#c98a5a', '#a86970', '#9b7ec8', '#
 // The engines Settings can hold credentials for. Order matches the backend's
 // auto-selection priority in server/src/providers/index.ts. `defaultModel` is only
 // a placeholder hint — the backend owns the real default.
-const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string }[] = [
-  { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…', defaultModel: 'claude-opus-5' },
-  { id: 'openai', label: 'OpenAI', placeholder: 'sk-…', defaultModel: 'gpt-4o-mini' },
-  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash' },
+// `keyUrl` matters more than it looks: someone who has never bought model access
+// has no idea these pages exist, and telling them "add an API key" without saying
+// where is the first place a non-technical user gets stuck for good.
+const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string; keyUrl: string }[] = [
+  { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…', defaultModel: 'claude-opus-5', keyUrl: 'https://console.anthropic.com/settings/keys' },
+  { id: 'openai', label: 'OpenAI', placeholder: 'sk-…', defaultModel: 'gpt-4o-mini', keyUrl: 'https://platform.openai.com/api-keys' },
+  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
 ];
+
+/** Where to get a key, shown wherever we tell someone they need one. */
+function GetKeyLinks({ compact = false }: { compact?: boolean }) {
+  return (
+    <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: compact ? 6 : 8, lineHeight: 1.6 }}>
+      Don't have one?{' '}
+      {PROVIDER_FIELDS.map((f, i) => (
+        <React.Fragment key={f.id}>
+          {i > 0 && ' · '}
+          <a href={f.keyUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--pm)', textDecoration: 'underline' }}>
+            {f.label.replace(/\s*\(.*\)$/, '')} ↗
+          </a>
+        </React.Fragment>
+      ))}
+      <div style={{ marginTop: 3 }}>You pay the model provider directly — Chaperone never sees the bill or the key.</div>
+    </div>
+  );
+}
 
 // ─── Shared primitives — 1-to-1 port of wf-shared.jsx ───────────────────────
 
@@ -137,7 +158,7 @@ function SidePmItem({ active, onClick }: { active: boolean; onClick?: () => void
   );
 }
 
-function Sidebar_Empty({ workspacePath: _wp }: { workspacePath: string }) {
+function Sidebar_Empty({ workspacePath: _wp, onSettings, onProfile }: { workspacePath: string; onSettings?: () => void; onProfile?: () => void }) {
   return (
     <div className="wf-side">
       <div style={{ display:'flex',flexDirection:'column',gap:2 }}>
@@ -149,8 +170,8 @@ function Sidebar_Empty({ workspacePath: _wp }: { workspacePath: string }) {
       </div>
       <div style={{ flex:1 }} />
       <div style={{ display:'flex',flexDirection:'column',gap:2,paddingTop:8 }}>
-        <SideBottomRow icon={IcoProfile} label="Profile" />
-        <SideBottomRow icon={IcoSettings} label="Settings" />
+        <SideBottomRow icon={IcoProfile} label="Profile" onClick={onProfile} />
+        <SideBottomRow icon={IcoSettings} label="Settings" onClick={onSettings} />
       </div>
     </div>
   );
@@ -250,6 +271,15 @@ function MissionRail({ projects, activePath, onSelectProject, onNewProject, onSe
 // wireframes and never wired up. Marked rather than deleted so the design intent
 // stays visible, and so nobody believes a Pause button stops anything. Grep
 // NOT_WIRED to find everything still owed.
+const AUTONOMY_CHOICES = [
+  { id: 'manual' as const, title: 'Ask me every time',
+    blurb: 'Every tool call waits for approval. Slowest, and nothing happens that you did not see.' },
+  { id: 'edits' as const, title: 'Auto-approve reads',
+    blurb: 'Reading files and looking around runs freely; anything that writes or executes still asks.' },
+  { id: 'auto' as const, title: 'Run the task, stop at the boundary',
+    blurb: 'A worker works through its task uninterrupted, then stops before the merge for your review.' },
+];
+
 const NOT_WIRED = { opacity: 0.4, cursor: 'not-allowed' } as const;
 const NOT_WIRED_TITLE = 'Not built yet';
 
@@ -359,13 +389,14 @@ function FileTreeNode({ node, depth, openPath, onOpen }: {
 function Sidebar({
   workspacePath, onOpenWorkspace, fileTree, deletedFiles, openFilePath, onOpenFile, onRefreshFiles, isLoadingFiles,
   activeView, onSelectPm, missions, onSelectMission, skills: _sk, onAddSkill, onNewMission,
-  onSelectSkills, onRecruit, team,
+  onSelectSkills, onRecruit, team, onSettings, onProfile,
 }: {
   workspacePath: string; onOpenWorkspace: () => void; fileTree: TreeNode[]; deletedFiles: TreeNode[];
   openFilePath: string | null; onOpenFile: (p: string) => void; onRefreshFiles: () => void;
   isLoadingFiles: boolean; activeView: string; onSelectPm: () => void; missions: Mission[];
   onSelectMission: (id: string) => void; skills: Skill[]; onAddSkill: () => void; onNewMission: () => void;
   onSelectSkills: () => void; onRecruit: () => void; team: TeamWorker[];
+  onSettings: () => void; onProfile: () => void;
 }) {
   const isPmActive = activeView === 'pm';
   const activeMissionId = activeView !== 'pm' ? activeView : null;
@@ -461,8 +492,8 @@ function Sidebar({
 
       <div style={{ flex:1 }} />
       <div style={{ display:'flex',flexDirection:'column',gap:2,paddingTop:8 }}>
-        <SideBottomRow icon={IcoProfile} label="Profile" />
-        <SideBottomRow icon={IcoSettings} label="Settings" />
+        <SideBottomRow icon={IcoProfile} label="Profile" onClick={onProfile} />
+        <SideBottomRow icon={IcoSettings} label="Settings" onClick={onSettings} />
       </div>
     </div>
   );
@@ -2051,6 +2082,8 @@ const App: React.FC = () => {
   } | null>(null);
   const [fileViewMode, setFileViewMode] = useState<'content' | 'diff'>('diff');
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useLocalStorage<string>('ac_profile_name', '');
   // S7: provider selection state.
   const [providerInfo, setProviderInfo] = useState<{ active: string; current: string; available: { id: string; label: string; ready: boolean }[] } | null>(null);
   const loadProvider = () => {
@@ -2926,6 +2959,55 @@ const App: React.FC = () => {
   // ── M1 · Onboarding Screen 0a · Welcome (no project) ──────────────────────
   // 1-to-1 port of Onboarding_Welcome in wf-onboarding.jsx, with tiles
   // reordered per user: Start from scratch / Open folder / Clone GitHub.
+  // ── Profile ──
+  // Deliberately thin. Chaperone has no accounts, no sign-in and no server-side
+  // identity, so the only thing that is genuinely *the user's own* right now is
+  // what they want to be called. Everything else that could pad this page out —
+  // the engine, the autonomy policy, project paths — is app configuration and
+  // belongs in Settings; putting it here would just be Settings wearing a
+  // different label.
+  const profileModal = showProfile && (
+    <div onClick={() => setShowProfile(false)}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 460, background: 'var(--bg-elevated, var(--paper))', borderRadius: 10, padding: '28px 28px 24px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border-default, var(--rule))' }}>
+
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Profile</div>
+        <div style={{ fontSize: 12, color: 'var(--text-dim, var(--ink-3))', marginBottom: 20 }}>
+          You're the CEO here. Everything below stays on this machine — there is no account to sign in to.
+        </div>
+
+        <label style={{ fontSize: 11, color: 'var(--text-label, var(--ink-3))', fontWeight: 700, letterSpacing: 1 }}>WHAT THE PM CALLS YOU</label>
+        <input
+          value={profileName}
+          onChange={e => setProfileName(e.target.value)}
+          placeholder="your name"
+          style={{ width: '100%', background: 'var(--bg-base, var(--paper))', border: '1px solid var(--border-default, var(--rule))', padding: '10px 13px', color: 'var(--text-primary, var(--ink))', marginTop: 8, borderRadius: 6, fontSize: 13 }}
+        />
+        <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
+          Leave it blank and the PM just says "you".
+        </div>
+
+        <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--rule-soft, var(--rule))' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+            Looking for API keys, the model engine, or how much agents may do on their own? Those are app settings, not account details.
+          </div>
+          <button onClick={() => { setShowProfile(false); setShowSettings(true); }}
+            style={{ marginTop: 10, fontSize: 12, padding: '6px 13px', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: 'var(--ink-2)', border: '1px solid var(--rule)' }}>
+            Open Settings
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', marginTop: 24 }}>
+          <button onClick={() => setShowProfile(false)}
+            style={{ flex: 1, background: 'var(--pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── File viewer ──
   // A modified file opens on its diff, because "what changed" is the question the
   // sidebar is there to answer; the whole file is one click away.
@@ -3066,6 +3148,11 @@ const App: React.FC = () => {
                     <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4, background: ready ? 'var(--approve-soft, rgba(80,180,120,0.18))' : 'transparent', color: ready ? 'var(--approve, #4caf7d)' : 'var(--text-dim)', border: ready ? 'none' : '1px solid var(--border-default)' }}>
                       {ready ? 'KEY SET' : 'NO KEY'}
                     </span>
+                    {/* Opens in the system browser from the desktop build. */}
+                    <a href={f.keyUrl} target="_blank" rel="noreferrer"
+                      style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent-pm)', textDecoration: 'underline' }}>
+                      {ready ? 'manage keys ↗' : 'get a key ↗'}
+                    </a>
                   </div>
                   <input
                     type="password"
@@ -3135,6 +3222,31 @@ const App: React.FC = () => {
               </div>
             )}
 
+            {/* Moved out of a corner of the mission view. How much a worker may do
+                before it stops and asks is the most consequential choice here, and
+                it was the least discoverable thing in the app. */}
+            <div style={{ marginTop: 22 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-label)', fontWeight: 700, letterSpacing: 1 }}>HOW MUCH AGENTS MAY DO ALONE</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                {AUTONOMY_CHOICES.map(({ id, title, blurb }) => {
+                  const active = autonomyMode === id;
+                  return (
+                    <div key={id} onClick={() => setAutonomyMode(id)}
+                      style={{ padding: '9px 12px', borderRadius: 6, cursor: 'pointer',
+                        border: `1.5px solid ${active ? 'var(--accent-pm)' : 'var(--border-default)'}`,
+                        background: active ? 'var(--pm-soft, rgba(74,111,165,0.12))' : 'transparent' }}>
+                      <div style={{ fontSize: 13, fontWeight: active ? 700 : 500 }}>{title}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted, var(--ink-2))', lineHeight: 1.5, marginTop: 2 }}>{blurb}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>
+                Applies to new work; a worker already running keeps the mode it started under.
+              </div>
+            </div>
+
+
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
               <button onClick={saveSettings} disabled={savingSettings} style={{ flex: 1, background: 'var(--accent-pm)', color: '#fff', border: 'none', padding: 12, borderRadius: 6, fontWeight: 700, cursor: savingSettings ? 'wait' : 'pointer', opacity: savingSettings ? 0.6 : 1, fontSize: 14 }}>{savingSettings ? 'Saving…' : 'Save'}</button>
               <button onClick={() => setShowSettings(false)} style={{ padding: '12px 18px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
@@ -3189,6 +3301,7 @@ const App: React.FC = () => {
                       <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
                         Chaperone runs on whichever model you bring — Claude, OpenAI or Gemini. You can open a project first, but the PM can't read it until there's a key.
                       </div>
+                      <GetKeyLinks compact />
                     </div>
                     <button onClick={() => setShowSettings(true)}
                       style={{ fontSize: 12, padding: '7px 14px', background: 'var(--pm)', color: 'var(--paper)', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -3241,6 +3354,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {profileModal}
       {fileModal}
       {askModal}
       </div>
@@ -3288,7 +3402,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar title={`PM · just opened ~/${projectLabel}`} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath || onbPath} />
+            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
               <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -3333,6 +3447,7 @@ const App: React.FC = () => {
                           ? 'The provider rejected the key, so nothing was read. Check it in Settings, or switch to a different engine.'
                           : 'Chaperone runs on whichever model you bring — Claude, OpenAI or Gemini. It needs one API key before the PM can read anything.'}
                       </div>
+                      {keyProblem(scan.error) !== 'rejected' && <GetKeyLinks compact />}
                       {keyProblem(scan.error) === 'rejected' && (
                         <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                           {tidyProviderError(scan.error)}
@@ -3404,6 +3519,7 @@ const App: React.FC = () => {
           <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={0} extra="PM · just opened folder · awaiting your reply" />
         </div>
       {settingsModal}
+      {profileModal}
       {fileModal}
       {askModal}
       </div>
@@ -3461,7 +3577,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath || onbPath} />
+            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
               <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -3589,6 +3705,7 @@ const App: React.FC = () => {
           <BottomBar backendStatus={backendStatus} model={config.defaultModel} hitlPending={current ? 1 : 0} extra={docsDraft.status === 'running' ? 'PM · reading the project and drafting' : current ? `PM · ${current.name} · awaiting approval · ${docsStep + 1} of ${drafts.length}` : 'PM · nothing to draft'} />
         </div>
       {settingsModal}
+      {profileModal}
       {fileModal}
       {askModal}
       </div>
@@ -3614,7 +3731,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath} />
+            <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
             {/* hideDocs: PM tabs only appear once user has approved workflow docs */}
             <PMShell
               activeTab={activePmTab}
@@ -3717,6 +3834,7 @@ const App: React.FC = () => {
           />
         </div>
       {settingsModal}
+      {profileModal}
       {fileModal}
       {askModal}
       </div>
@@ -3752,6 +3870,8 @@ const App: React.FC = () => {
         onAddSkill={() => setShowAddSkill(true)}
         onNewMission={() => setActiveView('pm')}
         onSelectSkills={() => setActiveView('skills')}
+        onSettings={() => setShowSettings(true)}
+        onProfile={() => setShowProfile(true)}
         onRecruit={() => setRecruitOpen(true)}
         team={team}
       />
@@ -4392,6 +4512,7 @@ const App: React.FC = () => {
       )}
 
       {settingsModal}
+      {profileModal}
       {fileModal}
       {askModal}
 
