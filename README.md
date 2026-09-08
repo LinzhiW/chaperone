@@ -16,6 +16,92 @@ founders, designers, PMs, indie hackers. You direct; the team builds; you sign o
 > [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for an honest designed-vs-built
 > audit.
 
+![Four workers running in parallel, each on its own branch, one paused for approval](docs/screenshots/mission-4-workers.png)
+
+*Four workers on four branches. W2 has stopped mid-task and is holding a `write_file` call until you approve it — nothing touches your repo before you say so.*
+
+---
+
+## What it looks like
+
+<table>
+<tr>
+<td width="50%">
+
+**The PM reads your project first**
+
+![PM exploring the repository](docs/screenshots/pm-scan.png)
+
+It calls read-only tools and reports what it actually found — the files listed are the ones it opened.
+
+</td>
+<td width="50%">
+
+**Two workers, side by side**
+
+![Two workers side by side](docs/screenshots/mission-2-workers.png)
+
+Layout follows the worker count: one fills the frame, two split it, three or four take a 2×2.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Skills are equipped, not configured**
+
+![Skill library](docs/screenshots/skills-library.png)
+
+Read from your own skills directory. Search, categorise, and save reusable sets.
+
+</td>
+<td width="50%">
+
+**Hiring a worker takes three steps**
+
+![Recruit a worker](docs/screenshots/recruit-worker.png)
+
+Pick a role, equip skills, name it. The branch prefix is derived from the role.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Loadouts per worker**
+
+![Worker loadout](docs/screenshots/worker-loadout.png)
+
+Limited slots, on purpose: arming an agent should be a visible decision.
+
+</td>
+<td width="50%">
+
+**Bring your own model**
+
+![API key settings](docs/screenshots/settings-keys.png)
+
+Claude, OpenAI, Gemini, or anything with an OpenAI-style API — Kimi, DeepSeek, GLM, Qwen, a local Ollama.
+
+</td>
+</tr>
+</table>
+
+> **On these screenshots.** The PM scan, skill library, recruiting and settings are
+> live screens with real data. The mission frames use a sample mission: the
+> orchestration UI, approval gates and layout are the real components, but no
+> models were run to produce them. The mission plan screen below is a design
+> preview whose content is still hardcoded — see
+> [docs/UI_AUDIT.md](docs/UI_AUDIT.md), which lists everything in the app that is
+> drawn but not yet wired.
+
+<details>
+<summary>Mission plan (design preview — content not yet wired)</summary>
+
+![Mission plan](docs/screenshots/mission-plan.png)
+
+</details>
+
 ---
 
 ## Why it exists

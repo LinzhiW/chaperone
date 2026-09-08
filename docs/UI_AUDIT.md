@@ -71,6 +71,20 @@ Not open items — listed so a later sweep doesn't re-report them.
   gear did nothing until a project was open.
 - Files sidebar showed one flat `readdir` with no git status. Now a real tree.
 
+## Found later, in the same spirit
+
+- **The mission plan and brief screens are unreachable.** `pmScreen` has three
+  states — `idle`, `briefing`, `plan` — and nothing in the app ever sets
+  `briefing`, while the only route to `plan` is a button inside `briefing`. Both
+  screens render fine if you force the state; a user cannot get to either. The
+  plan screen's three workers ("W1 ui-worker / feat/ui-layer …") are a hardcoded
+  fictional feature, and its Dispatch button reads the real, empty
+  `pendingAssignments` — so it would do nothing even if reached.
+- **Corrected from the sweep above:** the Skills library and Recruit flow were
+  listed in older docs as unbuilt. They are built and reading real data — the
+  library lists the skills in the user's own skills directory, and recruiting is a
+  working three-step flow. Trust the app over `docs/BUILD_TRACKER.md` here.
+
 ## Suggested order
 
 1. **The two Pause controls.** Not because they are hardest, but because a brake
