@@ -637,10 +637,18 @@ function BottomBar({ backendStatus, model, hitlPending, extra, usage, onOpenUsag
       <span>hitl: pending {hitlPending}</span>
       {/* Running spend, always visible. Someone using their own API key should
           never have to wonder what a run just cost them. */}
-      {usage && usage.calls > 0 && (
+      {/* Shown from the first run, not only once something has been spent: a new
+          user is exactly who needs to know this costs money and where to watch it.
+          Hiding it until after the first call put the counter out of sight at the
+          moment it mattered most. */}
+      {usage && (
         <span onClick={onOpenUsage} title="what the models have cost so far — click for the breakdown"
           style={{ cursor: onOpenUsage ? 'pointer' : 'default', textDecoration: onOpenUsage ? 'underline dotted' : 'none' }}>
-          spend: {usage.unpricedCalls === usage.calls ? `${formatTokens(usage.input + usage.output)} tok` : `~${formatUsd(usage.usd)}`}
+          spend: {usage.calls === 0
+            ? '$0'
+            : usage.unpricedCalls === usage.calls
+              ? `${formatTokens(usage.input + usage.output)} tok`
+              : `~${formatUsd(usage.usd)}`}
         </span>
       )}
       <span style={{ marginLeft: 'auto' }}>{extra || '⌘K · command palette'}</span>
@@ -778,7 +786,10 @@ function WorkerTile({ assignment, color, workerIndex, onStart, onApprove, nudgeI
       : 'var(--ink-3)';
 
   return (
-    <div style={{ background: 'var(--paper)', border: `1.5px solid ${isDone ? 'var(--approve)' : 'var(--rule)'}`, borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+    // flex:1 makes the card fill its grid cell. Without it the card sized to its
+    // own content, so a worker paused for approval drew a tall card next to short
+    // ones and the "grid" looked like loose boxes with gaps.
+    <div style={{ background: 'var(--paper)', border: `1.5px solid ${isDone ? 'var(--approve)' : 'var(--rule)'}`, borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, flex: 1 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: `1px solid ${isDone ? 'rgba(110,139,84,0.3)' : 'var(--rule)'}`, background: isDone ? 'var(--approve-soft)' : 'var(--paper-2)', flexShrink: 0 }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />
@@ -4602,7 +4613,13 @@ const App: React.FC = () => {
           const hitlCount = activeMission.assignments.filter(a => a.pendingAction).length;
           const doneCount = activeMission.assignments.filter(a => a.status === 'done').length;
           const totalCommits = Object.values(branchStats).reduce((s, b) => s + b.commits, 0);
-          const gridCols = missionLayout === '1' ? '1fr' : '1fr 1fr';
+          // Equal-area cells. One worker fills the frame; two split it; three or
+          // four take a 2x2 whose rows are equal whatever any tile contains.
+          const workerCount = activeMission.assignments.length;
+          const autoLayout = workerCount <= 1 ? '1' : workerCount === 2 ? '2' : '3-4';
+          const effectiveLayout = missionLayout === '3-4' && workerCount <= 2 ? autoLayout : missionLayout;
+          const gridCols = effectiveLayout === '1' ? '1fr' : '1fr 1fr';
+          const gridRows = effectiveLayout === '1' || effectiveLayout === '2' ? '1fr' : '1fr 1fr';
           const deepDiveAssignment = activeWorker !== null ? activeMission.assignments.find(a => a.id === activeWorker) : null;
           const deepDiveIdx = deepDiveAssignment ? activeMission.assignments.indexOf(deepDiveAssignment) : 0;
 
@@ -4709,18 +4726,22 @@ const App: React.FC = () => {
                 {!allBooting && !allDone && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 6, border: '1px solid var(--rule)', background: 'var(--paper-2)', overflow: 'hidden', flexShrink: 0, alignSelf: 'flex-start' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: 'var(--ink-3)', padding: '5px 10px', borderRight: '1px solid var(--rule)' }}>LAYOUT</span>
-                    {(['1', '2', '3-4'] as const).map((l, i) => (
-                      <button key={l} onClick={() => setMissionLayout(l)} style={{ fontSize: 11, padding: '5px 11px', background: missionLayout === l ? 'var(--ink)' : 'transparent', color: missionLayout === l ? 'var(--paper)' : 'var(--ink-3)', border: 'none', borderRight: i < 2 ? '1px solid var(--rule)' : 'none', cursor: 'pointer', fontFamily: 'var(--sans)', fontWeight: missionLayout === l ? 700 : 400 }}>
-                        {l === '1' ? '1 · full frame' : l === '2' ? '2 · split half/half' : `3-4 · 2×2 grid${missionLayout === '3-4' ? ' · current' : ''}`}
-                      </button>
-                    ))}
+                    {/* Only offer layouts the current worker count can fill —
+                        a 2x2 button with two workers just leaves holes. */}
+                    {(['1', '2', '3-4'] as const)
+                      .filter(l => l === '1' || (l === '2' && workerCount >= 2) || (l === '3-4' && workerCount >= 3))
+                      .map((l, i, shown) => (
+                        <button key={l} onClick={() => setMissionLayout(l)} style={{ fontSize: 11, padding: '5px 11px', background: effectiveLayout === l ? 'var(--ink)' : 'transparent', color: effectiveLayout === l ? 'var(--paper)' : 'var(--ink-3)', border: 'none', borderRight: i < shown.length - 1 ? '1px solid var(--rule)' : 'none', cursor: 'pointer', fontFamily: 'var(--sans)', fontWeight: effectiveLayout === l ? 700 : 400 }}>
+                          {l === '1' ? '1 · full frame' : l === '2' ? '2 · side by side' : '3-4 · 2×2 grid'}
+                        </button>
+                      ))}
                   </div>
                 )}
 
                 {/* Worker tiles grid — click any tile to deep-dive */}
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: allDone ? '1fr 1fr' : gridCols, gap: 10, minHeight: 0, overflow: 'auto' }}>
+                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: allDone ? '1fr 1fr' : gridCols, gridTemplateRows: allDone ? undefined : gridRows, gap: 10, minHeight: 0, overflow: allDone ? 'auto' : 'hidden' }}>
                   {activeMission.assignments.map((assignment, idx) => (
-                    <div key={assignment.id} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, cursor: 'pointer' }} onClick={() => setActiveWorker(assignment.id)}>
+                    <div key={assignment.id} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', cursor: 'pointer' }} onClick={() => setActiveWorker(assignment.id)}>
                       <WorkerTile
                         assignment={assignment}
                         workerIndex={idx}
