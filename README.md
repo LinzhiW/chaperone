@@ -9,12 +9,12 @@ work is invisible while it happens and unaccountable after.
 Chaperone turns that into a process you can see and steer. You **staff a team** —
 hire agents into roles, equip each with a limited set of skills. You **watch them
 work**, each in its own pane, on its own git branch, and you can talk to any one of
-them mid-task. **Nothing is written without your approval.** A reviewer reads the
-diffs before anything merges. And the project's progress lives in a file the model
-cannot talk its way around.
+them mid-task. **By default a worker stops and holds any write until you approve
+it**; you can loosen that to auto-approve reads, or let it run a whole task — even
+then it stops before the merge. A reviewer reads the diffs. And the project's
+progress lives in a file the model cannot talk its way around.
 
-It's for people who can judge software but don't write it — founders, designers,
-PMs — and for anyone who wants the loop to be legible rather than magical.
+It's for people who know what they want built but don't write the code themselves.
 
 ### What makes it different
 
@@ -24,7 +24,7 @@ PMs — and for anyone who wants the loop to be legible rather than magical.
 | **Skills are equipment** | A skill library you can search and compose into reusable sets, then equip into a worker's limited slots. Arming an agent is a deliberate, visible act, not a hidden config file. |
 | **Sub-tasks aren't a black box** | Every worker gets its own pane showing its real tool calls as they happen. You can interrupt any one of them — "switch to Zustand", "explain that file" — without stopping the others. |
 | **Isolation by construction** | One worker, one git branch. Parallel work can't collide, and a bad run is a branch you don't merge. |
-| **Approval is the default** | A worker pauses and holds the call before it writes or executes. Autonomy is a setting you raise deliberately, not the starting point. |
+| **Approval is the default, not the ceiling** | Out of the box a worker holds every write for you. Three settings: ask every time · auto-approve reads · run the whole task. The loosest one still stops before the merge. |
 | **Progress you can trust** | A board of vertical slices with their acceptance items, read from `.chaperone/progress.json` — done / working / needs you / blocked. Structured state on disk, not the model's account of itself in chat. |
 | **Parallelism has a gearbox** | How many agents may write at once is derived, not guessed: while the foundation is still moving you get read-only audits; only once it settles does the PM propose widening. Raising the gear needs your confirmation, lowering it doesn't. |
 | **Any model, your key** | Claude, OpenAI, Gemini, or anything OpenAI-compatible — Kimi, DeepSeek, GLM, Qwen, a local Ollama. You pay the provider; the running cost is on screen as it accrues. |
@@ -122,23 +122,16 @@ Claude, OpenAI, Gemini, or anything with an OpenAI-style API — Kimi, DeepSeek,
 
 ---
 
-## The problem it's built for
+## What it's for
 
-People who can't code can now get software written for them. What they can't do is
-tell when the AI is quietly going wrong — and it goes wrong in the same handful of
-ways every time. It loses the thread across several features at once. It rewrites
-something that already worked. It reports success it did not achieve. It burns an
-hour of tokens with nothing to show. A developer catches these by instinct; someone
-without that instinct finds out much later, when the project is already tangled.
+AI goes wrong in the same handful of ways every time: it loses the thread across
+several features at once, rewrites something that already worked, reports success it
+did not achieve, or burns an hour of tokens with nothing to show. A developer
+catches these by instinct. Someone without that instinct finds out much later, when
+the project is already tangled.
 
-**Chaperone's job is to catch them for you** — not with a smarter model, but with a
-structure around the model: an operating model the agents work inside, checkpoints
-where a human has to look, one worker per branch so mistakes stay contained, and a
-reviewer that reads the diffs before anything merges.
-
-**You bring your own model key.** Chaperone talks to Claude, OpenAI, Gemini or any
-OpenAI-compatible endpoint with your key; you pay the provider directly and it never
-sees your bill.
+Catching them is what the structure here is for — the checkpoints, the one-worker-
+one-branch isolation, the reviewer, the board that only you can mark accepted.
 
 ## The progress board
 
@@ -178,132 +171,22 @@ Widening needs your explicit confirmation; narrowing happens automatically and g
 logged with its reason. The full model is in
 [docs/PM_OPERATING_MODEL.md](docs/PM_OPERATING_MODEL.md).
 
-## Design principles
-
-1. **Don't rebuild the engine — own the layer above it.** We don't compete with the
-   agent execution loop. We own orchestration, safety, and skills.
-2. **Bring your own model.** One pipeline, any backend. The platform owns the
-   behavior; the model is a swappable part.
-3. **Skill loadouts.** Reusable capabilities are equipped onto each agent like gear
-   in a game — drag into limited slots, save sets, set role defaults. Arming an
-   agent is a visible, deliberate act, not a hidden config file.
-4. **You stay in command.** Nothing runs or spends a token invisibly.
-
----
-
-## Running it
-
-**Requirements**
-
-- Node.js 20+
-- An API key for **at least one** model provider — Chaperone runs the same
-  pipeline on any of them:
-
-  | Provider | Key | Get one |
-  | --- | --- | --- |
-  | Claude (Anthropic) | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
-  | OpenAI | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
-  | Gemini (Google) | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com/apikey) |
-
-  Plus one slot for **any other OpenAI-compatible endpoint** — DeepSeek, Kimi,
-  GLM, Qwen, OpenRouter, or a local Ollama / vLLM server. They speak the same
-  dialect, so they need no adapter of their own: set a base URL and go. It is an
-  API key, not a partnership.
-
-- `git` on your PATH (Chaperone uses branches to isolate parallel work)
-
-**Setup**
+## Quick start
 
 ```bash
 git clone https://github.com/LinzhiW/chaperone.git
 cd chaperone
-npm install
-cd server && npm install && cd ..
+npm install && cd server && npm install && cd ..
+npm run desktop
 ```
 
-Add your key(s). The backend reads its environment from **`server/.env`** — copy
-the template and fill in whichever providers you have:
+That builds both halves and opens the desktop app. Add a model key under Settings —
+[Gemini](https://aistudio.google.com/apikey) has a free tier and asks for no card,
+which is the shortest path to seeing it work. You pay the provider directly;
+Chaperone never sees your bill or your key.
 
-```bash
-cp server/.env.example server/.env
-```
-
-You can also skip this and paste keys into the app's Settings dialog later; it
-writes them to the same file.
-
-**Start both halves** (two terminals):
-
-```bash
-npm run dev
-```
-
-```bash
-cd server && npm run dev
-```
-
-Then open http://localhost:5173. The backend runs on port 3005.
-
-> Behind a proxy or VPN? The server launcher sets `NODE_USE_ENV_PROXY=1` so Node's
-> `fetch` honors `HTTPS_PROXY`, which it otherwise ignores. Just set `HTTPS_PROXY`
-> in your environment.
-
-**Choosing the engine.** With more than one configured, Chaperone picks in the
-order Custom → Claude → OpenAI → Gemini (a custom endpoint leads because filling
-one in is a deliberate act). Settings → *Model engine* pins a specific one, and the
-model id per provider is overridable there or via `ANTHROPIC_MODEL`,
-`OPENAI_MODEL`, `GEMINI_MODEL`, `CUSTOM_MODEL`.
-
-One caveat on custom endpoints: the pipeline leans on function calling. An endpoint
-that only partly implements OpenAI-style tool calls can connect fine and then stall
-once workers start using tools.
-
-**Other environment variables**
-
-| Variable | Purpose |
-| --- | --- |
-| `SKILLS_PATH` | Where to look for skill definitions |
-| `HTTPS_PROXY` | Honored by the backend for model API calls |
-
----
-
-## Desktop app
-
-Chaperone also runs as a desktop app, which is the easier way to use it: one
-window instead of two terminals, and — because a web page can never learn a real
-filesystem path — a **native folder picker** instead of typing paths by hand.
-
-```bash
-npm run desktop          # build both halves, then launch
-```
-
-To iterate on the UI with hot reload, run `npm run dev` in one terminal and:
-
-```bash
-npm run desktop:dev      # loads the Vite server inside the Electron window
-```
-
-To produce a distributable:
-
-```bash
-npm run dist             # unpacked app in release/
-npm run dist:installer   # installer / portable exe
-```
-
-**Where its settings live.** The desktop app keeps credentials in the per-user
-application data folder, *not* in `server/.env` — the install directory is
-read-only for non-admins. So the desktop build starts with no keys even if
-`server/.env` is populated; add them once under Settings.
-
-| OS | Path |
-| --- | --- |
-| Windows | `%APPDATA%\chaperone\.env` |
-| macOS | `~/Library/Application Support/chaperone/.env` |
-| Linux | `~/.config/chaperone/.env` |
-
-The embedded backend binds to an OS-assigned free port rather than 3005, so
-nothing collides with whatever else is running.
-
----
+Running from source, packaging an installer, where credentials are stored, and the
+proxy note: **[docs/SETUP.md](docs/SETUP.md)**.
 
 ## How it's laid out
 

@@ -20,7 +20,7 @@ still a patch we can't merge.
 
 ## Development setup
 
-See [README.md](README.md#running-it). Short version: `npm install` at the root and
+See [docs/SETUP.md](docs/SETUP.md). Short version: `npm install` at the root and
 in `server/`, put a `GEMINI_API_KEY` in `.env`, then run `npm run dev` at the root
 and `npm run dev` in `server/`.
 
