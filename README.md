@@ -1,20 +1,38 @@
 # Chaperone
 
-**An AI dev team that works to a process — so its usual mistakes don't become yours.**
+**A visible harness for building software with AI.**
 
-Chaperone makes you the founder of an AI software team. You set a goal. A **PM
-agent** plans it and splits it into assignments. Each **Worker** builds its piece
-**on its own git branch**, so parallel work never collides. A **Reviewer** audits
-the diffs. Then **you** decide what merges.
+Most AI coding tools are a chat box in front of a black box: you type, something
+happens, code appears, and you find out later whether it was the right code. The
+work is invisible while it happens and unaccountable after.
 
-It's built for people who have the ideas but were locked out by the terminal —
-founders, designers, PMs, indie hackers. You direct; the team builds; you sign off.
+Chaperone turns that into a process you can see and steer. You **staff a team** —
+hire agents into roles, equip each with a limited set of skills. You **watch them
+work**, each in its own pane, on its own git branch, and you can talk to any one of
+them mid-task. **Nothing is written without your approval.** A reviewer reads the
+diffs before anything merges. And the project's progress lives in a file the model
+cannot talk its way around.
 
-> **Status: early and opinionated.** The core loop (PM → Workers on branches →
-> Reviewer → merge) runs today. The provider-agnostic backend and the skill system
-> are actively being built. Expect rough edges and breaking changes. See
-> [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for an honest designed-vs-built
-> audit.
+It's for people who can judge software but don't write it — founders, designers,
+PMs — and for anyone who wants the loop to be legible rather than magical.
+
+### What makes it different
+
+| | |
+| --- | --- |
+| **Hire, don't prompt** | Agents are staffed into roles (frontend, backend, QA, DevOps, data) with a branch prefix and a skill loadout — not conjured per message. |
+| **Skills are equipment** | A skill library you can search and compose into reusable sets, then equip into a worker's limited slots. Arming an agent is a deliberate, visible act, not a hidden config file. |
+| **Sub-tasks aren't a black box** | Every worker gets its own pane showing its real tool calls as they happen. You can interrupt any one of them — "switch to Zustand", "explain that file" — without stopping the others. |
+| **Isolation by construction** | One worker, one git branch. Parallel work can't collide, and a bad run is a branch you don't merge. |
+| **Approval is the default** | A worker pauses and holds the call before it writes or executes. Autonomy is a setting you raise deliberately, not the starting point. |
+| **Progress you can trust** | A board of vertical slices with their acceptance items, read from `.chaperone/progress.json` — done / working / needs you / blocked. Structured state on disk, not the model's account of itself in chat. |
+| **Parallelism has a gearbox** | How many agents may write at once is derived, not guessed: while the foundation is still moving you get read-only audits; only once it settles does the PM propose widening. Raising the gear needs your confirmation, lowering it doesn't. |
+| **Any model, your key** | Claude, OpenAI, Gemini, or anything OpenAI-compatible — Kimi, DeepSeek, GLM, Qwen, a local Ollama. You pay the provider; the running cost is on screen as it accrues. |
+
+> **Status: early and opinionated.** The core loop — PM reads the project, workers
+> run on branches, you approve, reviewer reads the diffs — works today. Parts of the
+> UI are still drawn but not wired, and [docs/UI_AUDIT.md](docs/UI_AUDIT.md) lists
+> exactly which.
 
 ![Four workers running in parallel, each on its own branch, one paused for approval](docs/screenshots/mission-4-workers.png)
 
@@ -104,29 +122,61 @@ Claude, OpenAI, Gemini, or anything with an OpenAI-style API — Kimi, DeepSeek,
 
 ---
 
-## Why it exists
+## The problem it's built for
 
 People who can't code can now get software written for them. What they can't do is
 tell when the AI is quietly going wrong — and it goes wrong in the same handful of
 ways every time. It loses the thread across several features at once. It rewrites
-something that already worked. It reports success it did not achieve. It burns
-tokens for an hour with nothing to show. A developer catches these by instinct;
-someone without that instinct only finds out much later, when the project is
-already tangled.
+something that already worked. It reports success it did not achieve. It burns an
+hour of tokens with nothing to show. A developer catches these by instinct; someone
+without that instinct finds out much later, when the project is already tangled.
 
-**Chaperone's job is to catch them for you.** The process is the product: an
-operating model the agents work inside, checkpoints where a human has to look, one
-worker per git branch so mistakes stay contained, and a reviewer that reads the
-diffs before anything merges. Not a smarter model — a structure around the model
-that makes its usual failures visible early and cheap to undo.
+**Chaperone's job is to catch them for you** — not with a smarter model, but with a
+structure around the model: an operating model the agents work inside, checkpoints
+where a human has to look, one worker per branch so mistakes stay contained, and a
+reviewer that reads the diffs before anything merges.
 
-The second half is the skills. An agent is only as good as what it has been given
-to work with, so capabilities are equipped onto each worker deliberately and
-visibly, the way you'd staff a role rather than hope a general-purpose assistant
-guesses right.
+**You bring your own model key.** Chaperone talks to Claude, OpenAI, Gemini or any
+OpenAI-compatible endpoint with your key; you pay the provider directly and it never
+sees your bill.
 
-**You bring your own model key.** Chaperone talks to Claude, OpenAI or Gemini with
-your key; you pay the provider directly and it never sees your bill.
+## The progress board
+
+The part with no obvious equivalent elsewhere. Work is tracked as **vertical
+slices** — S1, S2, S3 — each with the acceptance items that make it real, and each
+carrying a status that rolls up:
+
+```
+CEO briefs a goal → PM plans → Workers build on branches → CEO reviews & merges
+                                              gear L1   ·   volatility High
+
+S1 · PM produces a real plan                                          done
+S2 · PM dispatches read-only L1 audits                           needs you
+S3 · Worker edits a real file on a branch                        needs you
+      git branch create/checkout                                 needs you
+      worker write_file (HITL-gated) + auto-commit to branch      needs you
+      /api/diff — CEO sees the real committed diff               needs you
+```
+
+Two things make this different from a task list:
+
+**It is read from disk, not from the conversation.** The board comes from
+`.chaperone/progress.json`. An agent that says it finished something has not
+changed the board; acceptance does. "Needs you" is a real queue, not a summary.
+
+**The gearbox is on it.** `gear L1 · volatility High` is the tool's answer to the
+question that sinks parallel agent work: *how many can safely write at once?* It is
+derived from how often recent work touched the project's foundation files —
+
+| Gear | Foundation | What may run in parallel |
+| --- | --- | --- |
+| **L1** | unknown or being mapped | reads only — audits |
+| **L2** | being built, one active slice | limited concurrent writes, within one slice, by layer |
+| **L3** | frozen | concurrent writes across slices |
+
+Widening needs your explicit confirmation; narrowing happens automatically and gets
+logged with its reason. The full model is in
+[docs/PM_OPERATING_MODEL.md](docs/PM_OPERATING_MODEL.md).
 
 ## Design principles
 
