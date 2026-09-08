@@ -14,6 +14,11 @@ it**; you can loosen that to auto-approve reads, or let it run a whole task — 
 then it stops before the merge. A reviewer reads the diffs. And the project's
 progress lives in a file the model cannot talk its way around.
 
+The effect is that your project gets run the way a real engineering team would run
+it — a spec written down before the building starts, conventions kept on disk, work
+split into slices that can actually ship, and nothing counted as done because an
+agent said so. You get that whether or not you know those practices have names.
+
 It's for people who know what they want built but don't write the code themselves.
 
 ### What makes it different
@@ -25,6 +30,7 @@ It's for people who know what they want built but don't write the code themselve
 | **Sub-tasks aren't a black box** | Every worker gets its own pane showing its real tool calls as they happen. You can interrupt any one of them — "switch to Zustand", "explain that file" — without stopping the others. |
 | **Isolation by construction** | One worker, one git branch. Parallel work can't collide, and a bad run is a branch you don't merge. |
 | **Approval is the default, not the ceiling** | Out of the box a worker holds every write for you. Three settings: ask every time · auto-approve reads · run the whole task. The loosest one still stops before the merge. |
+| **The process comes with it** | The PM writes the spec before building starts, keeps the project's conventions on disk, and splits work into slices that can ship. Standard practice on a professional team; unknown to most people who have never been on one. |
 | **Progress you can trust** | A board of vertical slices with their acceptance items, read from `.chaperone/progress.json` — done / working / needs you / blocked. Structured state on disk, not the model's account of itself in chat. |
 | **Parallelism has a gearbox** | How many agents may write at once is derived, not guessed: while the foundation is still moving you get read-only audits; only once it settles does the PM propose widening. Raising the gear needs your confirmation, lowering it doesn't. |
 | **Any model, your key** | Claude, OpenAI, Gemini, or anything OpenAI-compatible — Kimi, DeepSeek, GLM, Qwen, a local Ollama. You pay the provider; the running cost is on screen as it accrues. |
