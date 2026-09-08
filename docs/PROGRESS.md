@@ -11,7 +11,7 @@ MVP Goal: CEO briefs a goal → PM plans → Workers build on branches → CEO r
 Overall: 2 / 4 required vertical slices accepted
 Gear: L1 (read-only)   ·   Foundation volatility: High
 
-[accepted] S1   PM produces a real plan  ✓ CEO-accepted 2026-06-23 ("图一 good start point")
+[accepted] S1   PM produces a real plan  ✓ CEO-accepted 2026-06-23 (CEO: "figure 1 — good start point")
   [done]    backend  /api/pm/plan (POST generate + GET load)  — server/src/index.ts
   [done]    backend  pm-plan.json persistence                 — server/src/persistence.ts
   [done]    frontend PmPlanPanel (goal input + plan render)   — src/App.tsx
@@ -22,10 +22,10 @@ Gear: L1 (read-only)   ·   Foundation volatility: High
   [done]    /api/pm/explore — truly agentic: model drives with list_files/read_file tools,
             chooses what to read, replies in its own voice. No hand-fed file blobs.
   [done]    PM intro + presets visible in idle even with prior chat history
-  [done]    language mirrors CEO's last typed message (English in → English out; 中文 → 中文)
+  [done]    language mirrors CEO's last typed message (English in -> English out; Chinese in -> Chinese out)
   [done]    ProgressBoard — global collapsible bottom bar reads .chaperone/progress.json;
             collapsed: project/gear/counts/badges; expanded: full slice tree with subtasks.
-            CEO: "可以这个位置不错" (position good; label "vertical slices" noted for later)
+            CEO: position is good; the label should read "vertical slices" — noted for later
   [done]    presets rewired: Check progress + Plan agent dispatch now agentic (see S2 log)
 
 [ai_verified] S2 PM dispatches read-only L1 audits  (backend built; CEO click-test pending)
@@ -98,7 +98,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
 
 ### 2026-06-23 (later) — by Claude Code
 - Slice: S1 → accepted; two acceptance-time fixes
-- CEO accepted S1 (the plan card: real files + L1 + persistence). "图一 good start point."
+- CEO accepted S1 (the plan card: real files + L1 + persistence). "Figure 1 — good start point."
 - Fix 1 (ordering): PmPlanPanel was rendered ABOVE the PM self-intro. Moved it to
   render after the welcome block. Verified in UI: intro → presets → plan panel.
 - Fix 2 (formatting): `/api/project-review` prompt forced "3–5 sentences" → one block.
@@ -125,7 +125,7 @@ Frontend (Vite) `http://localhost:5183` · Backend (Express) `http://localhost:3
   - `GET /api/pm/progress` + `PUT /api/pm/progress` endpoints + `getProgress()`/`saveProgress()`
     in persistence.ts. Seeds `SEED_PROGRESS` on first read (S1/S1.5 accepted, S2-S4 pending).
 - Files changed: server/src/index.ts, server/src/persistence.ts, src/App.tsx
-- CEO feedback: "可以这个位置不错，虽然信息不准（s1-4应该是vertical slices），但可以先这样"
+- CEO feedback: the position is good; the information is not accurate (S1-4 should read "vertical slices") but it is fine for now
   → label tweak noted (will say "vertical slices" not "steps"), position accepted.
 - Result: accepted → moving to S2.
 

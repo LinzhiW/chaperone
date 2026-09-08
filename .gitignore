@@ -46,3 +46,17 @@ npm-debug.log*
 docs/product-intro.md
 docs/weekly-report.md
 docs/weekly/
+regression_*.png
+docs/screenshots/regression_*
+
+# Design-process history: superseded plans and snapshot copies of the wireframes.
+# Kept locally; they are a record of how the design got here, not something a
+# reader of this repo needs. (phase2b-13a is still referenced from code.)
+.design/**/DESIGN_LOG.md
+.design/agent-company/project/backups/phase1/
+.design/agent-company/project/backups/phase2a/
+.design/agent-company/project/backups/phase2b/
+.design/agent-company/project/uploads/
+docs/DEV_PLAN.md
+docs/DESIGN_NOTES.md
+.design/agent-company/project/CLAUDE_CODE_KICKOFF.md

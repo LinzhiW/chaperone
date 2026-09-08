@@ -1,4 +1,4 @@
-# Chaperone — Acceptance (验收 SOP + 反例库)
+# Chaperone — Acceptance (sign-off SOP + counter-example library)
 
 > "Can we call it done" source of truth. The CEO click-tests every slice in the
 > running app. AI may pre-check (→ `ai_verified`) but **only the CEO sets `accepted`.**

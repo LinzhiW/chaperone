@@ -1596,13 +1596,13 @@ Read-only only — do not suggest changes, just report what you find.`,
 
 You just received read-only audit reports from ${auditorResults.length} auditor(s). Now produce your PM dispatch assessment — NOT a generic tech audit. Apply the operating model above and structure it EXACTLY like this:
 
-**当前阶段判断 / Stage** — What stage is this project really at? Is it a serial Golden Path chain + support slices, or genuinely parallel-safe? Correct any naive "N parallel slices" reading.
-**Golden Path + 依赖 / dependencies** — The serial main chain of required slices (S1→S2→…) with their HARD dependencies, and WHY they can't be built in parallel.
-**Slice 分类** — Split slices into: core Golden Path · beta/support · launch/commercial.
-**Foundation Files + 波动率 / volatility** — List the REAL foundation files (from what the auditors read) and judge volatility High/Medium/Low with reasoning.
-**推荐档位 / Recommended gear (L1/L2/L3) + 理由** — Which parallel level is safe NOW, with explicit reasons referencing the gates (are foundation files written into PROGRESS.md? does the active path cross many files? uncommitted changes? Phase 1 declarations done? interface contracts locked?). Early/unstable → L1.
-**具体分配 / Concrete allocation** — If L1: which read-only auditors, each with read scope + deliverable. If L2: which layers within the ONE active slice, allowed/forbidden files. Name real files.
-**结论 + 下一步 / Recommendation + question** — A clear recommendation (usually: don't widen the battle line; do the safe level first), then ask the CEO ONE concrete question about what they want to do next.
+**Stage** — What stage is this project really at? Is it a serial Golden Path chain + support slices, or genuinely parallel-safe? Correct any naive "N parallel slices" reading.
+**Golden Path + dependencies** — The serial main chain of required slices (S1→S2→…) with their HARD dependencies, and WHY they can't be built in parallel.
+**Slice classification** — Split slices into: core Golden Path · beta/support · launch/commercial.
+**Foundation files + volatility** — List the REAL foundation files (from what the auditors read) and judge volatility High/Medium/Low with reasoning.
+**Recommended gear (L1/L2/L3) + why** — Which parallel level is safe NOW, with explicit reasons referencing the gates (are foundation files written into PROGRESS.md? does the active path cross many files? uncommitted changes? Phase 1 declarations done? interface contracts locked?). Early/unstable → L1.
+**Concrete allocation** — If L1: which read-only auditors, each with read scope + deliverable. If L2: which layers within the ONE active slice, allowed/forbidden files. Name real files.
+**Recommendation + next question** — A clear recommendation (usually: don't widen the battle line; do the safe level first), then ask the CEO ONE concrete question about what they want to do next.
 
 Be specific and grounded — cite real file names and real slice names from the audits. Do not invent files the auditors didn't find.${langName ? `\n\nWrite your entire reply in ${langName}.` : ''}`,
       tools: [],

@@ -8,7 +8,7 @@
 ## TL;DR — resume here tomorrow
 
 **Read first:** [BUILD_TRACKER.md](BUILD_TRACKER.md) — the accurate, code-verified
-status board (视觉 vs 功能 columns). Then [PRD.md](PRD.md) (spec) + [TODO.md](TODO.md).
+status board (visual vs wired columns). Then [PRD.md](PRD.md) (spec) + [TODO.md](TODO.md).
 
 **What landed today:**
 1. **P1 — provider-agnostic backend.** New `server/src/providers/` (`types.ts`
@@ -31,7 +31,7 @@ are all wired and functional.
 **→ Tomorrow, first build task: reconnect this link.** Wire the PM idle composer to
 `sendPmMessage`, render real `pendingAssignments` as the plan (replace the hardcoded
 W1/W2/W3 block), so the app runs end-to-end: brief → plan → dispatch → workers →
-reviewer. Then move to the Skills cluster (库→导入→配装→组套), the core differentiator.
+reviewer. Then move to the Skills cluster (library -> import -> loadout -> saved sets), the core differentiator.
 
 ## Branch / git state
 - On `refactor/model-provider`: P1 + tracker + this handoff committed.

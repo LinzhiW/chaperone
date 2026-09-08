@@ -47,7 +47,7 @@ The defensible work is **not** the execution engine. It is:
 4. **A control model people actually trust** — bounded autonomy with hard
    checkpoints, so nothing runs invisibly (the Paperclip failure mode).
 
-## 3. Core differentiators (the "看点")
+## 3. Core differentiators
 
 | # | Differentiator | Why it's hard to copy |
 |---|----------------|------------------------|
