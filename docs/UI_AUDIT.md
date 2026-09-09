@@ -70,6 +70,20 @@ Not open items — listed so a later sweep doesn't re-report them.
 - The Settings modal rendered only after the onboarding early-returns, so the
   gear did nothing until a project was open.
 - Files sidebar showed one flat `readdir` with no git status. Now a real tree.
+- The **setup screens rendered a second, dead copy of the sidebar**
+  (`Sidebar_Empty`). Files, Team, Missions and Skills carried no handler at all,
+  so during setup the whole left nav was a picture — which is what a user hits
+  first. Reopening a saved project has always skipped setup, so leaving it early
+  was already allowed; there was just no way to say so. Each row now leaves setup
+  and opens that view, and the three ＋ buttons are gone, since during setup there
+  is no team to recruit into and no mission to open.
+- **Team and Missions could not be collapsed** in the real sidebar either — only
+  Files could, so clicking the other two headers did nothing. All three toggle
+  now. Files' own arrow was hardcoded to ▸ and never moved.
+- **`＋` on Missions did nothing visible.** It called `setActiveView('pm')` while
+  you were already on the PM screen. No button makes a mission — the PM proposes
+  one and you dispatch it — so it now puts the cursor in the PM composer, and an
+  empty mission list says "＋ brief the PM" rather than sitting blank.
 
 ## Found later, in the same spirit
 

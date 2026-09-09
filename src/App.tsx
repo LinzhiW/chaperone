@@ -165,11 +165,11 @@ const IcoSettings = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 
 const sideNavRow = (Icon: React.FC, label: string, active: boolean, expanded: boolean, addable: boolean, addBorderColor = 'var(--approve)'): React.CSSProperties & { icon: React.FC; label: string; active: boolean; expanded: boolean; addable: boolean; addColor: string } => ({ icon: Icon, label, active, expanded, addable, addColor: addBorderColor } as any);
 
-function SideNavRow({ icon: Icon, label, active, expanded, addable, addColor = 'var(--approve)', onClick, onAdd }: {
-  icon: React.FC; label: string; active?: boolean; expanded?: boolean; addable?: boolean; addColor?: string; onClick?: () => void; onAdd?: () => void;
+function SideNavRow({ icon: Icon, label, active, expanded, addable, addColor = 'var(--approve)', onClick, onAdd, title }: {
+  icon: React.FC; label: string; active?: boolean; expanded?: boolean; addable?: boolean; addColor?: string; onClick?: () => void; onAdd?: () => void; title?: string;
 }) {
   return (
-    <div onClick={onClick} style={{ display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:4,cursor:'pointer',background:active?'var(--ink)':'transparent',color:active?'var(--paper)':'var(--ink-2)',fontSize:13,fontWeight:active?600:500 }}>
+    <div onClick={onClick} title={title} style={{ display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:4,cursor:'pointer',background:active?'var(--ink)':'transparent',color:active?'var(--paper)':'var(--ink-2)',fontSize:13,fontWeight:active?600:500 }}>
       <span style={{ display:'inline-flex',width:18,height:18,alignItems:'center',justifyContent:'center',flex:'0 0 auto' }}><Icon /></span>
       <span style={{ flex:1 }}>{label}</span>
       <span style={{ fontSize:10,opacity:0.7,lineHeight:1,display:'inline-flex',width:12,justifyContent:'center' }}>{expanded?'▾':'▸'}</span>
@@ -196,15 +196,27 @@ function SidePmItem({ active, onClick }: { active: boolean; onClick?: () => void
   );
 }
 
-function Sidebar_Empty({ workspacePath: _wp, onSettings, onProfile }: { workspacePath: string; onSettings?: () => void; onProfile?: () => void }) {
+function Sidebar_Empty({ workspacePath: _wp, onSettings, onProfile, onEnterApp }: {
+  workspacePath: string; onSettings?: () => void; onProfile?: () => void;
+  onEnterApp?: (view: 'pm' | 'skills') => void;
+}) {
+  // Setup is a wizard, but the nav beside it is the same nav as the rest of the
+  // app — and it used to be a picture of one: four rows carrying no handler, so
+  // a user who wanted out of setup found that nothing worked. Reopening the same
+  // project has always skipped setup, so leaving it early was already allowed.
+  // There was just no way to say so. Each row now says it, and goes there.
+  const enter = (view: 'pm' | 'skills') => () => onEnterApp?.(view);
+  const leave = 'Leave setup and open the workspace';
+  // No ＋ buttons here: during setup there is no team to recruit into, no
+  // mission to open and no loadout to add to.
   return (
     <div className="wf-side">
       <div style={{ display:'flex',flexDirection:'column',gap:2 }}>
-        <SideNavRow icon={IcoFiles} label="Files" expanded={false} />
-        <SideNavRow icon={IcoTeam} label="Team" active expanded addable addColor="var(--paper)" />
-        <SidePmItem active />
-        <SideNavRow icon={IcoMissions} label="Missions" expanded={false} addable />
-        <SideNavRow icon={IcoSkills} label="Skills" expanded={false} addable />
+        <SideNavRow icon={IcoFiles} label="Files" expanded={false} onClick={enter('pm')} title={leave} />
+        <SideNavRow icon={IcoTeam} label="Team" active expanded addColor="var(--paper)" onClick={enter('pm')} title={leave} />
+        <SidePmItem active onClick={enter('pm')} />
+        <SideNavRow icon={IcoMissions} label="Missions" expanded={false} onClick={enter('pm')} title={leave} />
+        <SideNavRow icon={IcoSkills} label="Skills" expanded={false} onClick={enter('skills')} title={leave} />
       </div>
       <div style={{ flex:1 }} />
       <div style={{ display:'flex',flexDirection:'column',gap:2,paddingTop:8 }}>
@@ -441,12 +453,16 @@ function Sidebar({
   const isTeamActive = isPmActive;
   const isMissionsActive = !!activeMissionId;
   const [filesOpen, setFilesOpen] = useState(true);
+  // Files could be collapsed and the other two could not, so clicking their
+  // headers did nothing at all. Same behaviour for all three now.
+  const [teamOpen, setTeamOpen] = useState(true);
+  const [missionsOpen, setMissionsOpen] = useState(true);
 
   return (
     <div className="wf-side">
       <div style={{ display:'flex',flexDirection:'column',gap:2 }}>
         {/* Files */}
-        <SideNavRow icon={IcoFiles} label="Files" expanded={false} onClick={() => setFilesOpen(o => !o)} />
+        <SideNavRow icon={IcoFiles} label="Files" expanded={filesOpen} onClick={() => setFilesOpen(o => !o)} />
         {filesOpen && (
           <div style={{ paddingLeft: 38, paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 1, marginBottom: 4 }}>
             {workspacePath ? (<>
@@ -482,9 +498,9 @@ function Sidebar({
         )}
 
         {/* Team */}
-        <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded addable addColor="var(--approve)" onAdd={onRecruit} />
-        <SidePmItem active={isPmActive} onClick={onSelectPm} />
-        {team.map(w => (
+        <SideNavRow icon={IcoTeam} label="Team" active={isTeamActive} expanded={teamOpen} addable addColor="var(--approve)" onAdd={onRecruit} onClick={() => setTeamOpen(o => !o)} />
+        {teamOpen && <SidePmItem active={isPmActive} onClick={onSelectPm} />}
+        {teamOpen && team.map(w => (
           <div key={w.id} onClick={onSelectSkills} title="open loadout" style={{ padding:'3px 10px 3px 38px',borderRadius:4,display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer',color:'var(--ink-2)' }}>
             <span style={{ width:6,height:6,borderRadius:99,background:'var(--worker)' }} />
             <span style={{ flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{w.id} · {w.displayName || w.role}</span>
@@ -492,9 +508,14 @@ function Sidebar({
         ))}
 
         {/* Missions */}
-        <SideNavRow icon={IcoMissions} label="Missions" active={isMissionsActive} expanded={missions.length > 0} addable onAdd={onNewMission} onClick={() => missions.length > 0 ? onSelectMission(missions[0].id) : onNewMission()} />
+        <SideNavRow icon={IcoMissions} label="Missions" active={isMissionsActive} expanded={missionsOpen} addable onAdd={onNewMission} onClick={() => setMissionsOpen(o => !o)} />
+        {/* No button makes a mission — the PM proposes one and you dispatch it.
+            An empty list therefore points at the only thing that does work. */}
+        {missionsOpen && missions.length === 0 && (
+          <div onClick={onNewMission} title="Missions start as a brief to the PM" style={{ padding:'3px 10px 3px 38px',fontSize:11,color:'var(--pm)',cursor:'pointer' }}>＋ brief the PM</div>
+        )}
         {/* Active missions */}
-        {missions.filter(m => m.status !== 'done').map(m => {
+        {missionsOpen && missions.filter(m => m.status !== 'done').map(m => {
           const mHitl = (m.assignments ?? []).filter(a => a.pendingAction).length;
           const active = activeView === m.id;
           const allWorkersDone = m.status === 'running' && (m.assignments?.length ?? 0) > 0 && (m.assignments ?? []).every(a => a.status === 'done');
@@ -509,7 +530,7 @@ function Sidebar({
           );
         })}
         {/* Archived missions (grayed, under subhead) */}
-        {missions.filter(m => m.status === 'done').length > 0 && (
+        {missionsOpen && missions.filter(m => m.status === 'done').length > 0 && (
           <>
             <div style={{ padding:'6px 10px 2px 28px',fontSize:9,letterSpacing:1.2,color:'var(--ink-3)',fontWeight:700,textTransform:'uppercase' }}>Archived</div>
             {missions.filter(m => m.status === 'done').map(m => {
@@ -2421,6 +2442,7 @@ const App: React.FC = () => {
     ask.onConfirm(v);
   };
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const pmComposerRef = useRef<HTMLInputElement>(null);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
 
@@ -2544,6 +2566,18 @@ const App: React.FC = () => {
       confirmLabel: 'Open',
       onConfirm: p => switchProject(p),
     });
+  };
+
+  /**
+   * Leave setup for the app proper. Safe at any of the three setup screens: the
+   * project path is already saved by then, and reopening a saved project starts
+   * at 'done' anyway — so this only lets the user do now what quitting and
+   * reopening would have done for them.
+   */
+  const enterAppFromSetup = (view: 'pm' | 'skills') => {
+    setOnboardingPhase('done');
+    setActiveView(view);
+    if (view === 'pm') { setActivePmTab('chat'); setPmScreen('idle'); }
   };
 
   // ── Multi-project rail ──────────────────────────────────────────────────────
@@ -3749,7 +3783,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={`PM · just opened ~/${projectLabel}`} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
+            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} onEnterApp={enterAppFromSetup} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
               <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -3925,7 +3959,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={drafts.length ? `PM · drafting initial docs · ${docsStep + 1} of ${drafts.length}` : 'PM · drafting initial docs'} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
+            <Sidebar_Empty workspacePath={config.projectPath || onbPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} onEnterApp={enterAppFromSetup} />
             <PMShell activeTab="chat" onTabChange={() => {}} runningMissions={[]} missionsMemoryCount={0} onSelectMission={() => {}} hideDocs>
               <div className="wf-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -4080,7 +4114,7 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar providerInfo={providerInfo} onSwitchProvider={switchProvider} onOpenSettings={() => setShowSettings(true)} title={docsReady ? 'PM · ready · what shall we build first?' : 'PM · waiting for your first brief'} model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel} />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} />
+            <Sidebar_Empty workspacePath={config.projectPath} onSettings={() => setShowSettings(true)} onProfile={() => setShowProfile(true)} onEnterApp={enterAppFromSetup} />
             {/* hideDocs: PM tabs only appear once user has approved workflow docs */}
             <PMShell
               activeTab={activePmTab}
@@ -4219,7 +4253,13 @@ const App: React.FC = () => {
         onSelectMission={(id) => setActiveView(id)}
         skills={skills}
         onAddSkill={() => setShowAddSkill(true)}
-        onNewMission={() => setActiveView('pm')}
+        onNewMission={() => {
+          setActiveView('pm'); setActivePmTab('chat'); setPmScreen('idle');
+          // After the view has actually rendered — otherwise there is no input
+          // yet. A timeout rather than requestAnimationFrame: rAF does not run
+          // while the window is hidden, and this must not depend on painting.
+          setTimeout(() => pmComposerRef.current?.focus(), 0);
+        }}
         onSelectSkills={() => setActiveView('skills')}
         onSettings={() => setShowSettings(true)}
         onProfile={() => setShowProfile(true)}
@@ -4479,7 +4519,7 @@ const App: React.FC = () => {
                 <div style={{ padding: '10px 18px 14px', borderTop: '1.5px solid var(--rule)', background: 'var(--paper-2)', flexShrink: 0 }}>
                   <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div className="composer" style={{ fontSize: 13 }}>
-                      <input value={pmInput} onChange={e => setPmInput(e.target.value)}
+                      <input ref={pmComposerRef} value={pmInput} onChange={e => setPmInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && pmInput.trim() && !isPmThinking) sendPmMessage(); }}
                         placeholder={isPmThinking ? 'PM is thinking…' : runningMissions.length > 0 ? 'New brief — will queue behind running missions…' : "What's our first mission?"}
                       />
