@@ -1192,6 +1192,16 @@ async function runExploreLoop(system: string, kickoff: string, workspacePath: st
     turn = await session.sendToolResults(results);
   }
 
+  // Running out of steps mid-exploration used to return an empty summary: the
+  // model was still asking for files when the budget ran out, so it had never
+  // written its answer. Ask for it once rather than reporting nothing after
+  // sixteen rounds of real work.
+  if (!turn.text && turn.toolCalls && turn.toolCalls.length > 0) {
+    turn = await session.sendMessage(
+      'That is enough exploring — no more tool calls. Answer now using only what you have already read.',
+    );
+  }
+
   return { text: turn.text || '', filesRead: [...new Set(filesRead)] };
 }
 

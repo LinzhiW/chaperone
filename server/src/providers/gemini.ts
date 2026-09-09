@@ -1,73 +1,99 @@
-// Gemini adapter — wraps @google/generative-ai behind the ModelProvider interface.
-// This is the reference adapter; Claude/GPT/DeepSeek follow the same shape (TODO P2/P5).
+// Gemini adapter — wraps @google/genai behind the ModelProvider interface.
 // Nothing Gemini-specific leaks above this file.
+//
+// Uses @google/genai, not the older @google/generative-ai. The old SDK sends tool
+// results with role "function", which current Gemini models reject outright
+// ("Role 'function' is not supported"). Plain chat still worked on the old SDK, so
+// the breakage only showed up once an agent actually used a tool — which is most
+// of what this app does.
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { ChatSession, ModelProvider, ModelTurn, StartChatOptions, TokenUsage, ToolResult } from './types';
 
 // Same budget the Claude/OpenAI adapters use — these calls often go through a
 // local proxy/VPN and the SDK default is short enough to cut off real work.
 const REQUEST_TIMEOUT_MS = 120000;
 
-/** Normalize a Gemini result into our common ModelTurn shape. */
-function toTurn(result: any): ModelTurn {
-  const response = result.response;
-  const calls = (response.functionCalls && response.functionCalls()) || [];
+function usageOf(r: any): TokenUsage | undefined {
+  const u = r?.usageMetadata;
+  if (!u) return undefined;
+  return {
+    input: u.promptTokenCount || 0,
+    // Reasoning tokens are billed as output but reported separately.
+    output: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0),
+    ...(u.cachedContentTokenCount ? { cached: u.cachedContentTokenCount } : {}),
+  };
+}
+
+/** Normalize a Gemini response into our common ModelTurn shape. */
+function toTurn(r: any): ModelTurn {
   let text = '';
-  try { text = response.text() || ''; } catch { text = ''; }
-  const um = response.usageMetadata;
+  try { text = r?.text || ''; } catch { text = ''; }
+  const calls = r?.functionCalls || [];
+  const usage = usageOf(r);
   return {
     text,
     toolCalls: calls.map((c: any) => ({ name: c.name, args: c.args || {} })),
-    ...(um ? { usage: { input: um.promptTokenCount || 0, output: um.candidatesTokenCount || 0,
-                        ...(um.cachedContentTokenCount ? { cached: um.cachedContentTokenCount } : {}) } } : {}),
+    ...(usage ? { usage } : {}),
   };
+}
+
+/** Our provider-agnostic history is already Gemini-shaped: { role, parts }. */
+function toHistory(history?: any[]): any[] {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map(h => ({
+      role: h.role === 'assistant' ? 'model' : h.role === 'model' ? 'model' : 'user',
+      parts: Array.isArray(h.parts) ? h.parts : [{ text: String(h.content ?? '') }],
+    }))
+    .filter(h => h.parts.length > 0);
 }
 
 class GeminiChatSession implements ChatSession {
   constructor(private chat: any) {}
 
   async sendMessage(text: string): Promise<ModelTurn> {
-    return toTurn(await this.chat.sendMessage(text));
+    return toTurn(await this.chat.sendMessage({ message: text }));
   }
 
   async sendToolResults(results: ToolResult[]): Promise<ModelTurn> {
     const parts = results.map(r => ({
       functionResponse: { name: r.name, response: { result: r.result } },
     }));
-    return toTurn(await this.chat.sendMessage(parts));
+    return toTurn(await this.chat.sendMessage({ message: parts }));
   }
 }
 
 export class GeminiProvider implements ModelProvider {
   readonly id = 'gemini';
   readonly modelLabel: string;
-  private genAI: GoogleGenerativeAI;
+  private ai: GoogleGenAI;
   private modelId: string;
 
   constructor(apiKey: string, modelId: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: REQUEST_TIMEOUT_MS } });
     this.modelId = modelId;
     this.modelLabel = modelId;
   }
 
   startChat(opts: StartChatOptions): ChatSession {
-    const model = this.genAI.getGenerativeModel({
+    const chat = this.ai.chats.create({
       model: this.modelId,
-      ...(opts.tools ? { tools: [{ functionDeclarations: opts.tools }] } : {}),
-      ...(opts.system ? { systemInstruction: opts.system } : {}),
-    } as any, { timeout: REQUEST_TIMEOUT_MS });
-    const chat = model.startChat(opts.history ? { history: opts.history } : {});
+      ...(opts.history ? { history: toHistory(opts.history) } : {}),
+      config: {
+        ...(opts.tools ? { tools: [{ functionDeclarations: opts.tools as any }] } : {}),
+        ...(opts.system ? { systemInstruction: opts.system } : {}),
+      },
+    });
     return new GeminiChatSession(chat);
   }
 
   async generateOnce(prompt: string): Promise<{ text: string; usage?: TokenUsage }> {
-    const model = this.genAI.getGenerativeModel({ model: this.modelId }, { timeout: REQUEST_TIMEOUT_MS });
-    const result = await model.generateContent(prompt);
-    const um = result.response.usageMetadata;
-    return {
-      text: result.response.text().trim(),
-      ...(um ? { usage: { input: um.promptTokenCount || 0, output: um.candidatesTokenCount || 0 } } : {}),
-    };
+    const r: any = await this.ai.models.generateContent({
+      model: this.modelId,
+      contents: prompt,
+    });
+    const usage = usageOf(r);
+    return { text: (r?.text || '').trim(), ...(usage ? { usage } : {}) };
   }
 }
