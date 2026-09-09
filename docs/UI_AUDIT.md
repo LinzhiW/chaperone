@@ -75,8 +75,10 @@ Not open items — listed so a later sweep doesn't re-report them.
   so during setup the whole left nav was a picture — which is what a user hits
   first. Reopening a saved project has always skipped setup, so leaving it early
   was already allowed; there was just no way to say so. Each row now leaves setup
-  and opens that view, and the three ＋ buttons are gone, since during setup there
-  is no team to recruit into and no mission to open.
+  and opens that view. The three ＋ buttons work from there too: Team's opens
+  Recruit, Skills' opens Add Skill, Missions' puts the cursor in the PM composer.
+  Both modals live below the setup early-returns, so they can only open once the
+  app proper is rendering — hence leaving setup first, not instead.
 - **Team and Missions could not be collapsed** in the real sidebar either — only
   Files could, so clicking the other two headers did nothing. All three toggle
   now. Files' own arrow was hardcoded to ▸ and never moved.

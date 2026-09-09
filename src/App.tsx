@@ -165,15 +165,17 @@ const IcoSettings = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 
 const sideNavRow = (Icon: React.FC, label: string, active: boolean, expanded: boolean, addable: boolean, addBorderColor = 'var(--approve)'): React.CSSProperties & { icon: React.FC; label: string; active: boolean; expanded: boolean; addable: boolean; addColor: string } => ({ icon: Icon, label, active, expanded, addable, addColor: addBorderColor } as any);
 
-function SideNavRow({ icon: Icon, label, active, expanded, addable, addColor = 'var(--approve)', onClick, onAdd, title }: {
-  icon: React.FC; label: string; active?: boolean; expanded?: boolean; addable?: boolean; addColor?: string; onClick?: () => void; onAdd?: () => void; title?: string;
+function SideNavRow({ icon: Icon, label, active, expanded, addable, addColor = 'var(--approve)', onClick, onAdd, onToggle, title, addTitle }: {
+  icon: React.FC; label: string; active?: boolean; expanded?: boolean; addable?: boolean; addColor?: string; onClick?: () => void; onAdd?: () => void; onToggle?: () => void; title?: string; addTitle?: string;
 }) {
   return (
     <div onClick={onClick} title={title} style={{ display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:4,cursor:'pointer',background:active?'var(--ink)':'transparent',color:active?'var(--paper)':'var(--ink-2)',fontSize:13,fontWeight:active?600:500 }}>
       <span style={{ display:'inline-flex',width:18,height:18,alignItems:'center',justifyContent:'center',flex:'0 0 auto' }}><Icon /></span>
       <span style={{ flex:1 }}>{label}</span>
-      <span style={{ fontSize:10,opacity:0.7,lineHeight:1,display:'inline-flex',width:12,justifyContent:'center' }}>{expanded?'▾':'▸'}</span>
-      {addable && <span onClick={e=>{e.stopPropagation();onAdd?.();}} style={{ display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:3,border:`1px solid ${active?'var(--paper)':addColor}`,color:active?'var(--paper)':addColor,fontSize:11,fontWeight:700,lineHeight:1,cursor:'pointer' }}>＋</span>}
+      <span onClick={onToggle ? e => { e.stopPropagation(); onToggle(); } : undefined}
+        title={onToggle ? (expanded ? 'collapse' : 'expand') : undefined}
+        style={{ fontSize:10,opacity:0.7,lineHeight:1,display:'inline-flex',width:12,justifyContent:'center' }}>{expanded?'▾':'▸'}</span>
+      {addable && <span onClick={e=>{e.stopPropagation();onAdd?.();}} title={addTitle} style={{ display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:3,border:`1px solid ${active?'var(--paper)':addColor}`,color:active?'var(--paper)':addColor,fontSize:11,fontWeight:700,lineHeight:1,cursor:'pointer' }}>＋</span>}
     </div>
   );
 }
@@ -198,25 +200,28 @@ function SidePmItem({ active, onClick }: { active: boolean; onClick?: () => void
 
 function Sidebar_Empty({ workspacePath: _wp, onSettings, onProfile, onEnterApp }: {
   workspacePath: string; onSettings?: () => void; onProfile?: () => void;
-  onEnterApp?: (view: 'pm' | 'skills') => void;
+  onEnterApp?: (view: 'pm' | 'skills', then?: 'recruit' | 'addSkill' | 'brief') => void;
 }) {
   // Setup is a wizard, but the nav beside it is the same nav as the rest of the
   // app — and it used to be a picture of one: four rows carrying no handler, so
   // a user who wanted out of setup found that nothing worked. Reopening the same
   // project has always skipped setup, so leaving it early was already allowed.
   // There was just no way to say so. Each row now says it, and goes there.
-  const enter = (view: 'pm' | 'skills') => () => onEnterApp?.(view);
+  const enter = (view: 'pm' | 'skills', then?: 'recruit' | 'addSkill' | 'brief') =>
+    () => onEnterApp?.(view, then);
   const leave = 'Leave setup and open the workspace';
-  // No ＋ buttons here: during setup there is no team to recruit into, no
-  // mission to open and no loadout to add to.
+  const leaveFor = (what: string) => `Leave setup and ${what}`;
   return (
     <div className="wf-side">
       <div style={{ display:'flex',flexDirection:'column',gap:2 }}>
         <SideNavRow icon={IcoFiles} label="Files" expanded={false} onClick={enter('pm')} title={leave} />
-        <SideNavRow icon={IcoTeam} label="Team" active expanded addColor="var(--paper)" onClick={enter('pm')} title={leave} />
+        <SideNavRow icon={IcoTeam} label="Team" active expanded addable addColor="var(--paper)"
+          onClick={enter('pm')} onAdd={enter('pm', 'recruit')} title={leave} addTitle={leaveFor('recruit a worker')} />
         <SidePmItem active onClick={enter('pm')} />
-        <SideNavRow icon={IcoMissions} label="Missions" expanded={false} onClick={enter('pm')} title={leave} />
-        <SideNavRow icon={IcoSkills} label="Skills" expanded={false} onClick={enter('skills')} title={leave} />
+        <SideNavRow icon={IcoMissions} label="Missions" expanded={false} addable
+          onClick={enter('pm')} onAdd={enter('pm', 'brief')} title={leave} addTitle={leaveFor('brief the PM')} />
+        <SideNavRow icon={IcoSkills} label="Skills" expanded={false} addable
+          onClick={enter('skills')} onAdd={enter('skills', 'addSkill')} title={leave} addTitle={leaveFor('add a skill')} />
       </div>
       <div style={{ flex:1 }} />
       <div style={{ display:'flex',flexDirection:'column',gap:2,paddingTop:8 }}>
@@ -508,7 +513,9 @@ function Sidebar({
         ))}
 
         {/* Missions */}
-        <SideNavRow icon={IcoMissions} label="Missions" active={isMissionsActive} expanded={missionsOpen} addable onAdd={onNewMission} onClick={() => setMissionsOpen(o => !o)} />
+        <SideNavRow icon={IcoMissions} label="Missions" active={isMissionsActive} expanded={missionsOpen} addable
+          onAdd={onNewMission} onToggle={() => setMissionsOpen(o => !o)}
+          onClick={() => missions.length > 0 ? onSelectMission(missions[0].id) : onNewMission()} />
         {/* No button makes a mission — the PM proposes one and you dispatch it.
             An empty list therefore points at the only thing that does work. */}
         {missionsOpen && missions.length === 0 && (
@@ -2574,10 +2581,15 @@ const App: React.FC = () => {
    * at 'done' anyway — so this only lets the user do now what quitting and
    * reopening would have done for them.
    */
-  const enterAppFromSetup = (view: 'pm' | 'skills') => {
+  const enterAppFromSetup = (view: 'pm' | 'skills', then?: 'recruit' | 'addSkill' | 'brief') => {
     setOnboardingPhase('done');
     setActiveView(view);
     if (view === 'pm') { setActivePmTab('chat'); setPmScreen('idle'); }
+    // Both modals live below the setup early-returns, so they can only open once
+    // the app proper is rendering — hence leaving setup first, not instead.
+    if (then === 'recruit') setRecruitOpen(true);
+    if (then === 'addSkill') setShowAddSkill(true);
+    if (then === 'brief') setTimeout(() => pmComposerRef.current?.focus(), 0);
   };
 
   // ── Multi-project rail ──────────────────────────────────────────────────────
