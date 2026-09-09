@@ -8,7 +8,7 @@ import { ClaudeProvider } from './claude';
 import { OpenAIProvider } from './openai';
 
 const getGeminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
-const getGeminiModel = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const getGeminiModel = () => process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
 const getAnthropicKey = () => process.env.ANTHROPIC_API_KEY || '';
 const getClaudeModel = () => process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-opus-5';

@@ -58,7 +58,7 @@ const WORKER_COLORS = ['#5d8aa8', '#87a36d', '#c98a5a', '#a86970', '#9b7ec8', '#
 const PROVIDER_FIELDS: { id: string; label: string; placeholder: string; defaultModel: string; keyUrl: string; freeTier?: boolean }[] = [
   { id: 'claude', label: 'Claude (Anthropic)', placeholder: 'sk-ant-…', defaultModel: 'claude-opus-5', keyUrl: 'https://console.anthropic.com/settings/keys' },
   { id: 'openai', label: 'OpenAI', placeholder: 'sk-…', defaultModel: 'gpt-4o-mini', keyUrl: 'https://platform.openai.com/api-keys' },
-  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey', freeTier: true },
+  { id: 'gemini', label: 'Gemini (Google)', placeholder: 'AIza…', defaultModel: 'gemini-flash-latest', keyUrl: 'https://aistudio.google.com/apikey', freeTier: true },
 ];
 
 /**
@@ -538,7 +538,7 @@ function Sidebar({
 }
 
 /* TopBar — mission title + pending/branches/cost chips on the right. */
-function TopBar({ title, pending = 0, branches = 0, model = 'gemini-2.5-flash', startedAt, providerInfo, onSwitchProvider, onOpenSettings }: {
+function TopBar({ title, pending = 0, branches = 0, model = 'gemini-flash-latest', startedAt, providerInfo, onSwitchProvider, onOpenSettings }: {
   title: string; pending?: number; branches?: number; model?: string; startedAt?: string;
   providerInfo?: { active: string; current: string | null; available: { id: string; label: string; ready: boolean }[] } | null;
   onSwitchProvider?: (id: string) => void;
@@ -2100,7 +2100,7 @@ function ProgressBoard({ workspacePath }: { workspacePath: string }) {
 const App: React.FC = () => {
   // Persisted
   const [config, setConfig] = useLocalStorage<{ googleKey: string; projectPath: string; defaultModel: string; projects?: string[] }>('ac_config', {
-    googleKey: '', projectPath: '', defaultModel: 'gemini-2.5-flash', projects: [],
+    googleKey: '', projectPath: '', defaultModel: 'gemini-flash-latest', projects: [],
   });
   const [skills, setSkills] = useState<Skill[]>([]);
   const [missions, setMissions] = useLocalStorage<Mission[]>('ac_missions', []);
@@ -2263,6 +2263,25 @@ const App: React.FC = () => {
   );
   const [customModels, setCustomModels] = useState<{ models: string[]; error?: string } | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
+  // Same for the built-in providers. A hardcoded default can go stale without
+  // warning — Google retired gemini-2.5-flash for new accounts and every fresh
+  // install 404'd — so the app can ask each provider what the key actually reaches.
+  const [providerModels, setProviderModels] = useState<Record<string, { models: string[]; error?: string }>>({});
+  const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
+  const fetchProviderModels = async (id: string) => {
+    setLoadingProvider(id);
+    try {
+      const res = await fetch(`${API_BASE}/api/provider/models`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: id }),
+      });
+      const d = await res.json();
+      setProviderModels(p => ({ ...p, [id]: { models: Array.isArray(d.models) ? d.models : [], error: d.error } }));
+    } catch {
+      setProviderModels(p => ({ ...p, [id]: { models: [], error: 'could not reach the backend' } }));
+    }
+    setLoadingProvider(null);
+  };
   const fetchCustomModels = async () => {
     setLoadingModels(true);
     try {
@@ -3433,12 +3452,40 @@ const App: React.FC = () => {
                     style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '9px 12px', color: 'var(--text-primary)', borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
                     placeholder={ready ? '•••••••••••  saved — type a new key to replace it' : f.placeholder}
                   />
-                  <input
-                    value={draftModels[f.id] || ''}
-                    onChange={e => setDraftModel(f.id, e.target.value)}
-                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '7px 12px', color: 'var(--text-muted)', marginTop: 6, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                    placeholder={`which model — now ${info?.label || f.defaultModel}`}
-                  />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+                    <input
+                      value={draftModels[f.id] || ''}
+                      onChange={e => setDraftModel(f.id, e.target.value)}
+                      style={{ flex: 1, background: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '7px 12px', color: 'var(--text-muted)', borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      placeholder={`which model — now ${info?.label || f.defaultModel}`}
+                    />
+                    <button type="button" onClick={() => fetchProviderModels(f.id)} disabled={!ready || loadingProvider === f.id}
+                      title={ready ? 'ask this provider which models your key can use' : 'save a key first'}
+                      style={{ fontSize: 10.5, padding: '6px 10px', borderRadius: 5, whiteSpace: 'nowrap',
+                        cursor: (!ready || loadingProvider === f.id) ? 'not-allowed' : 'pointer',
+                        opacity: (!ready || loadingProvider === f.id) ? 0.45 : 1,
+                        background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
+                      {loadingProvider === f.id ? 'asking…' : 'list models'}
+                    </button>
+                  </div>
+                  {providerModels[f.id]?.error && (
+                    <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
+                      {providerModels[f.id].error}
+                    </div>
+                  )}
+                  {providerModels[f.id]?.models?.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5, maxHeight: 96, overflowY: 'auto' }}>
+                      {providerModels[f.id].models.map(m => (
+                        <button key={m} type="button" onClick={() => setDraftModel(f.id, m)}
+                          style={{ fontSize: 10.5, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace',
+                            background: draftModels[f.id] === m ? 'var(--accent-pm)' : 'transparent',
+                            color: draftModels[f.id] === m ? '#fff' : 'var(--text-muted, var(--ink-2))',
+                            border: `1px solid ${draftModels[f.id] === m ? 'var(--accent-pm)' : 'var(--border-default)'}` }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

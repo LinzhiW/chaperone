@@ -39,7 +39,7 @@ app.use(express.json());
 
 // --- Configuration ---
 const getApiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-const getModelId = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const getModelId = () => process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
 // --- Mission Management ---
 interface PendingAction {
@@ -1759,7 +1759,43 @@ app.get('/api/usage', (req, res) => {
 // Qwen rename things — so shipping a hardcoded list would go stale and send
 // people to a model that no longer exists. Better to ask the provider.
 app.post('/api/provider/models', async (req, res) => {
-  const { baseUrl, key } = req.body || {};
+  const { baseUrl, key, provider } = req.body || {};
+
+  // Built-in providers: use the key already on file and their own list endpoint.
+  // Gemini retiring gemini-2.5-flash for new accounts stranded users on a default
+  // that 404s, which is the argument for never trusting a hardcoded model name.
+  if (provider === 'gemini') {
+    const gk = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+    if (!gk) return res.json({ supported: true, models: [], error: 'No Gemini key saved yet' });
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(gk)}&pageSize=200`);
+      const d: any = await r.json();
+      if (!r.ok) return res.json({ supported: true, models: [], error: d?.error?.message || `${r.status}` });
+      const models = (d?.models || [])
+        .filter((m: any) => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map((m: any) => String(m.name || '').replace(/^models\//, ''))
+        .filter(Boolean).sort();
+      return res.json({ supported: true, models });
+    } catch (err: any) { return res.json({ supported: false, models: [], error: err.message }); }
+  }
+
+  if (provider === 'claude' || provider === 'openai') {
+    const isClaude = provider === 'claude';
+    const k = isClaude ? (process.env.ANTHROPIC_API_KEY || '') : (process.env.OPENAI_API_KEY || '');
+    if (!k) return res.json({ supported: true, models: [], error: `No ${isClaude ? 'Anthropic' : 'OpenAI'} key saved yet` });
+    const url = isClaude ? 'https://api.anthropic.com/v1/models?limit=100' : 'https://api.openai.com/v1/models';
+    const headers: Record<string, string> = isClaude
+      ? { 'x-api-key': k, 'anthropic-version': '2023-06-01' }
+      : { Authorization: `Bearer ${k}` };
+    try {
+      const r = await fetch(url, { headers });
+      const d: any = await r.json();
+      if (!r.ok) return res.json({ supported: true, models: [], error: d?.error?.message || `${r.status}` });
+      const models = (d?.data || []).map((m: any) => String(m?.id || '')).filter(Boolean).sort();
+      return res.json({ supported: true, models });
+    } catch (err: any) { return res.json({ supported: false, models: [], error: err.message }); }
+  }
+
   if (!baseUrl || !key) return res.status(400).json({ error: 'Need both a base URL and a key' });
 
   const url = String(baseUrl).replace(/\/+$/, '') + '/models';

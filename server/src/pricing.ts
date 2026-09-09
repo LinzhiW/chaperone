@@ -45,6 +45,10 @@ const DEFAULT_RATES: Record<string, Rate> = {
   // reason these are overridable.
   'gemini-2.5-flash-lite': { input: 0.05, output: 0.2 },
   'gemini-2.5-flash': { input: 0.3, output: 2.5, cached: 0.03 },
+  // Alias that always points at the current flash model, which is what the app
+  // defaults to so a retired version can't strand anyone. Its rate moves with
+  // whatever it resolves to — check the pricing page if the number looks wrong.
+  'gemini-flash-latest': { input: 0.3, output: 2.5, cached: 0.03 },
   'gemini-2.5-pro': { input: 1.25, output: 10 },
 };
 
