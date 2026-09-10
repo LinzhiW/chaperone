@@ -265,6 +265,9 @@ function HitlCard({ tool = 'run_shell', cmd = '', compact = false, onApprove, on
    - One circle per mission. Active mission = square corners + left bar.
    - Dashed green ＋ at bottom for "new mission".
    - ⚙ at the very bottom.                                                     */
+/** Last path segment — the folder's own name, on either path separator. */
+const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() || p;
+
 const projectLabel = (p: string) => {
   const name = p.split(/[\\/]/).filter(Boolean).pop() || 'Chaperone';
   return (name.match(/[a-zA-Z0-9]/g) || ['C', 'H']).slice(0, 2).join('').toUpperCase();
@@ -2432,15 +2435,22 @@ const App: React.FC = () => {
     fetch(`${API_BASE}/api/init-project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectPath: target }) }).catch(() => {});
   };
 
-  const addProject = () => {
-    askForFolder({
-      title: 'Open or add a project',
-      hint: 'Full path to the folder.\ne.g. /Users/you/code/my-app   or   C:\\Users\\you\\code\\my-app',
-      placeholder: 'path to project folder',
-      confirmLabel: 'Open',
-      onConfirm: p => switchProject(p),
-    });
-  };
+  /**
+   * ＋ in the project rail. It used to open the OS folder picker straight away,
+   * which quietly decided for the user that the project already exists on this
+   * machine as a folder — no room to start an empty one or clone a repo. Send
+   * them to the same three-way screen the app opens with, and let them say which.
+   */
+  const addProject = () => setOnboardingPhase('welcome');
+
+  /** Put a project in the rail. Opening one used to set projectPath without adding
+   *  it to the list, so a second project quietly replaced the first there. */
+  type AppConfig = typeof config;
+  const rememberProject = (prev: AppConfig, target: string): AppConfig => ({
+    ...prev,
+    projectPath: target,
+    projects: (prev.projects || []).includes(target) ? prev.projects : [...(prev.projects || []), target],
+  });
 
   const removeProject = (target: string) => {
     const remaining = (config.projects || []).filter(x => x !== target);
@@ -2888,7 +2898,7 @@ const App: React.FC = () => {
   const enterProject = (path: string, key?: string) => {
     const trimmed = path.trim();
     if (!trimmed) return;
-    const newConfig = { ...config, projectPath: trimmed };
+    const newConfig = rememberProject(config, trimmed);
     if (key && key.trim()) newConfig.googleKey = key.trim();
     setConfig(newConfig);
     setDocsReady(false);
@@ -3473,7 +3483,7 @@ const App: React.FC = () => {
         confirmLabel: 'Open',
         onConfirm: trimmed => {
           setOnbPath(trimmed);
-          setConfig({ ...config, projectPath: trimmed });
+          setConfig(prev => rememberProject(prev, trimmed));
           setOnboardingPhase('scan');
         },
       });
@@ -3484,8 +3494,17 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <div className="wf-topbar">
             <div style={{ fontWeight: 600, fontSize: 14 }}>Chaperone</div>
-            <span className="mission" style={{ color: 'var(--ink-3)', fontSize: 12 }}>·  v0.1 · no project loaded</span>
+            <span className="mission" style={{ color: 'var(--ink-3)', fontSize: 12 }}>
+              ·  v0.1 · {config.projectPath ? 'adding a project' : 'no project loaded'}
+            </span>
             <div className="spacer" />
+            {/* Reachable from ＋ now, not just on first run, so it needs a way out. */}
+            {config.projectPath && (
+              <span onClick={() => setOnboardingPhase('done')} title="Back to the project you have open"
+                style={{ fontSize: 12, color: 'var(--pm)', cursor: 'pointer', marginRight: 10 }}>
+                ← back to {folderName(config.projectPath)}
+              </span>
+            )}
             <span className="chip"><span className="dot" style={{ background: 'var(--ink-3)' }} />idle</span>
           </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper-2)', padding: 28, overflow: 'auto' }}>
@@ -3543,10 +3562,18 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Recent (empty state) */}
-              <div className="box-soft" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--paper)' }}>
+              {/* Recent — the real list once there is one. */}
+              <div className="box-soft" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--paper)', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, letterSpacing: 1.4, color: 'var(--ink-3)', textTransform: 'uppercase', fontWeight: 700 }}>Recent</span>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>nothing here yet — opened projects appear in the left rail</span>
+                {(config.projects || []).length === 0
+                  ? <span style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>nothing here yet — opened projects appear in the left rail</span>
+                  : (config.projects || []).map(p => (
+                      <span key={p} onClick={() => { switchProject(p); setOnboardingPhase('done'); }} title={p}
+                        style={{ fontSize: 12, color: 'var(--pm)', cursor: 'pointer', fontFamily: 'var(--mono)' }}>
+                        {folderName(p)}
+                      </span>
+                    ))
+                }
               </div>
 
               <div style={{ color: 'var(--ink-3)', textAlign: 'center', marginTop: 6, fontFamily: 'var(--hand)', fontSize: 14 }}>
@@ -3559,7 +3586,7 @@ const App: React.FC = () => {
             backendStatus={backendStatus}
             model={providerInfo ? (providerInfo.current || 'no model yet') : config.defaultModel}
             hitlPending={0}
-            extra="no project · waiting for you to choose"
+            extra={config.projectPath ? `${folderName(config.projectPath)} is open · pick how to add another` : 'no project · waiting for you to choose'}
           />
         </div>
       {settingsModal}
