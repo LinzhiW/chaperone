@@ -2804,13 +2804,23 @@ const App: React.FC = () => {
       skills: JSON.stringify(assignment.skillLoadout),
       branchName: assignment.branchName,
     });
-    const es = new EventSource(`${API_BASE}/api/execute-mission?${qs}`);
+    streamWorker(`${API_BASE}/api/execute-mission?${qs}`, missionId, assignmentId);
+  };
+
+  /**
+   * Attach to a worker's event stream: logs land in its panel, and each tool it
+   * wants to run is either auto-approved or put in front of the CEO, according to
+   * the autonomy mode. Both the first run and every later message go through here,
+   * so talking to a worker afterwards obeys exactly the same rules as its own run
+   * — which is the point of having modes at all.
+   */
+  const streamWorker = (url: string, missionId: string, assignmentId: number) => {
+    const es = new EventSource(url);
     es.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
         updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, data.log] }));
       } else if (data.type === 'require_approval') {
-        // Autonomy mode decides whether we pause for the CEO or auto-approve.
         const mode = autonomyModeRef.current;
         const auto = mode === 'auto' || (mode === 'edits' && data.tool === 'read_file');
         if (auto) {
@@ -2848,23 +2858,19 @@ const App: React.FC = () => {
     }));
   }, [autonomyMode, missions]);
 
-  const nudgeWorker = async (missionId: string, assignmentId: number) => {
+  /**
+   * Send a worker a message after its run. It can act on it — the reply used to be
+   * chat only, so "no, do it the other way" reached the one agent that could fix it
+   * and then went nowhere.
+   */
+  const nudgeWorker = (missionId: string, assignmentId: number) => {
     const message = nudgeInputs[assignmentId]?.trim();
     if (!message) return;
+    const assignment = missions.find(m => m.id === missionId)?.assignments.find(a => a.id === assignmentId);
     setNudgeInputs(prev => ({ ...prev, [assignmentId]: '' }));
     updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [YOU] ${message}`] }));
-    try {
-      const res = await fetch(`${API_BASE}/api/panel/${assignmentId}/nudge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
-      });
-      const data = await res.json();
-      const reply = data.text || data.error || '[No response]';
-      updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, `> [WORKER] ${reply}`] }));
-    } catch {
-      updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, '> [ERROR] Could not reach worker session.'] }));
-    }
+    const qs = new URLSearchParams({ message, ...(assignment ? { branchName: assignment.branchName } : {}) });
+    streamWorker(`${API_BASE}/api/panel/${assignmentId}/nudge?${qs}`, missionId, assignmentId);
   };
 
   const callReviewer = (missionId: string) => {

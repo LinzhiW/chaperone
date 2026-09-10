@@ -428,6 +428,77 @@ app.post('/api/config', (req, res) => {
   res.json({ success: true, persisted: true, updated: Object.keys(updates) });
 });
 
+/**
+ * Run an agent until it stops asking for tools, pausing at each one for approval.
+ *
+ * This lived inside /api/execute-mission and nowhere else, which is why talking to
+ * a worker afterwards could not execute anything: the nudge endpoint had no
+ * approval channel and no tool dispatch, so a worker that wanted to act was told
+ * to "start the worker again" — a missing implementation phrased as a rule.
+ * Both paths call this now.
+ *
+ * @returns why it stopped, which the caller has to tell the user about.
+ */
+/**
+ * Commit whatever the worker changed onto its own branch, so the result is a real
+ * diff the human can read (/api/diff) and merge (/api/merge) — both of which work
+ * on committed history, not a dirty tree.
+ */
+async function commitWorkerChanges(
+  workspacePath: string, branchName: string | undefined, message: string,
+  sendEvent: (type: string, data: any) => void,
+) {
+  if (!branchName || !workspacePath) return;
+  try {
+    const git = simpleGit(workspacePath);
+    if (!(await git.checkIsRepo())) return;
+    const status = await git.status();
+    if (status.files.length === 0) { sendEvent('log', { log: '> [GIT] No file changes to commit.' }); return; }
+    await git.add('.');
+    await git.commit(message.slice(0, 200));
+    sendEvent('log', { log: `> [GIT] Committed ${status.files.length} file(s) to ${branchName}` });
+  } catch (err: any) {
+    sendEvent('log', { log: `> [GIT] Commit skipped: ${err.message}` });
+  }
+}
+
+const TOOL_ROUNDS = 10;
+async function runToolLoop(o: {
+  session: ChatSession;
+  taskId: string;
+  workspacePath: string;
+  sendEvent: (type: string, data: any) => void;
+  firstMessage: string;
+}): Promise<'finished' | 'denied' | 'budget'> {
+  const { session, taskId, workspacePath, sendEvent } = o;
+  let turn = await session.sendMessage(o.firstMessage);
+  for (let i = 0; i < TOOL_ROUNDS; i++) {
+    if (turn.toolCalls.length === 0) {
+      if (turn.text) sendEvent('log', { log: `> [FINAL] ${turn.text}` });
+      return 'finished';
+    }
+    for (const call of turn.toolCalls) {
+      sendEvent('require_approval', { tool: call.name, args: call.args });
+      const approved = await new Promise<boolean>(resolve =>
+        activeMissions.set(taskId, { resolve, toolCall: call }));
+      if (!approved) { sendEvent('log', { log: '> [DENIED] Stopping.' }); return 'denied'; }
+
+      let output = '';
+      if (call.name === 'run_shell') output = await runShell((call.args as any).command, workspacePath);
+      else if (call.name === 'read_file') output = readFile((call.args as any).path, workspacePath);
+      else if (call.name === 'write_file') output = writeFile((call.args as any).path, (call.args as any).content, workspacePath);
+
+      sendEvent('log', { log: `> [OUTPUT] ${output.substring(0, 300)}` });
+      turn = await session.sendToolResults([{ name: call.name, result: output }]);
+    }
+  }
+  // Running out of rounds used to look exactly like finishing: the loop fell out
+  // and the changes were committed with no sign the agent had been cut off
+  // mid-thought. Say it, and say it in the log the user is reading.
+  sendEvent('log', { log: `> [STOPPED] Hit the ${TOOL_ROUNDS}-step limit for one turn. Whatever it changed is committed, but it was not finished — send it a message to continue.` });
+  return 'budget';
+}
+
 app.post('/api/approve-action', (req, res) => {
   const { taskId, approved } = req.body;
   const pending = activeMissions.get(taskId);
@@ -495,46 +566,12 @@ app.get('/api/execute-mission', async (req, res) => {
       : '';
     sendEvent('log', { log: `> [SYSTEM] Agent initialized (${provider.modelLabel}${skillLog}).` });
 
-    let turn = await session.sendMessage('Begin. State your plan first.');
-    for (let i = 0; i < 10; i++) {
-      if (turn.toolCalls.length > 0) {
-        for (const call of turn.toolCalls) {
-          sendEvent('require_approval', { tool: call.name, args: call.args });
-          const approved = await new Promise<boolean>((resolve) => activeMissions.set(taskId, { resolve, toolCall: call }));
-          if (!approved) { sendEvent('log', { log: `> [DENIED] Stopping.` }); activePanels.delete(taskId); return res.end(); }
-
-          let output = "";
-          if (call.name === "run_shell") output = await runShell((call.args as any).command, workspacePath);
-          else if (call.name === "read_file") output = readFile((call.args as any).path, workspacePath);
-          else if (call.name === "write_file") output = writeFile((call.args as any).path, (call.args as any).content, workspacePath);
-
-          sendEvent('log', { log: `> [OUTPUT] ${output.substring(0, 300)}` });
-          turn = await session.sendToolResults([{ name: call.name, result: output }]);
-        }
-      } else {
-        if (turn.text) sendEvent('log', { log: `> [FINAL] ${turn.text}` });
-        break;
-      }
-    }
-    // Commit the worker's changes to its branch so they become a real diff the CEO can
-    // review (/api/diff) and merge (/api/merge) — both operate on committed history.
-    if (branchName && workspacePath) {
-      try {
-        const git = simpleGit(workspacePath);
-        if (await git.checkIsRepo()) {
-          const status = await git.status();
-          if (status.files.length > 0) {
-            await git.add('.');
-            await git.commit(`worker(${agent}): ${taskName}`.slice(0, 200));
-            sendEvent('log', { log: `> [GIT] Committed ${status.files.length} file(s) to ${branchName}` });
-          } else {
-            sendEvent('log', { log: `> [GIT] No file changes to commit.` });
-          }
-        }
-      } catch (err: any) {
-        sendEvent('log', { log: `> [GIT] Commit skipped: ${err.message}` });
-      }
-    }
+    const outcome = await runToolLoop({
+      session, taskId, workspacePath, sendEvent,
+      firstMessage: 'Begin. State your plan first.',
+    });
+    if (outcome === 'denied') { activePanels.delete(taskId); return res.end(); }
+    await commitWorkerChanges(workspacePath, branchName, `worker(${agent}): ${taskName}`, sendEvent);
     activePanels.delete(taskId);
     res.end();
   } catch (err: any) {
@@ -769,29 +806,65 @@ app.post('/api/merge', async (req, res) => {
 
 // --- Nudge a worker (T3) ---
 // Continues the panel's existing ChatSession after the main execution loop.
-app.post('/api/panel/:panelId/nudge', async (req, res) => {
+/**
+ * Keep working with one worker after its first run — the thing you reach for when
+ * a task came back not quite right and you want the agent that did it to fix it.
+ *
+ * It used to be a plain POST that could only talk. If the worker answered with a
+ * tool call it replied "start the worker again to execute", which read like a
+ * safety rule and was really just a missing code path. So the one place you would
+ * naturally say "no, do it this way" could not do it that way.
+ *
+ * Now it streams like the first run does, over the same events and the same
+ * approval channel, so whatever autonomy mode is in force applies here too —
+ * including auto, where it simply gets on with it. Changes land on the worker's
+ * own branch, because a fix nobody committed is not a fix.
+ */
+app.get('/api/panel/:panelId/nudge', async (req, res) => {
   const { panelId } = req.params;
-  const { message } = req.body;
-  if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
+  const { message, branchName } = req.query as any;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  const sendEvent = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}
 
+`);
+
+  if (!message?.trim()) { sendEvent('log', { log: '> [ERROR] Nothing to send.' }); return res.end(); }
   if (activePanels.has(panelId)) {
-    return res.json({ text: 'Worker is currently executing — approve or deny the pending action first.' });
+    sendEvent('log', { log: '> [BUSY] This worker is mid-action — approve or deny what it is waiting on first.' });
+    return res.end();
+  }
+  const panel = panelSessions.get(panelId);
+  if (!panel) {
+    // Sessions live in memory, so a backend restart loses them. Say which it is.
+    sendEvent('log', { log: '> [ERROR] This worker has no live session — it never started, or the backend restarted since. Start it again to pick the conversation back up.' });
+    return res.end();
   }
 
-  const panel = panelSessions.get(panelId);
-  if (!panel) return res.status(404).json({ error: 'No session found. Start the worker first.' });
-
+  activePanels.add(panelId);
   try {
-    const turn = await panel.session.sendMessage(message);
-    if (turn.toolCalls.length > 0) {
-      // Worker wants to take action — surface this but don't auto-execute
-      return res.json({
-        text: (turn.text || 'Worker wants to take action.') + '\n> [TOOL REQUEST] Start the worker again to execute.',
-      });
+    if (branchName) {
+      try {
+        const git = simpleGit(panel.workspacePath);
+        if (await git.checkIsRepo()) await git.checkout(branchName);
+      } catch (err: any) {
+        sendEvent('log', { log: `> [GIT] Could not switch to ${branchName}: ${err.message}` });
+      }
     }
-    res.json({ text: turn.text });
+
+    const outcome = await runToolLoop({
+      session: panel.session, taskId: panelId, workspacePath: panel.workspacePath,
+      sendEvent, firstMessage: message,
+    });
+    if (outcome !== 'denied') await commitWorkerChanges(panel.workspacePath, branchName, `worker: ${message}`, sendEvent);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendEvent('log', { log: `> [CRITICAL ERROR] ${err.message}` });
+  } finally {
+    activePanels.delete(panelId);
+    sendEvent('end', {});
+    res.end();
   }
 });
 
