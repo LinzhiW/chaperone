@@ -15,6 +15,9 @@ release/
 usage.json
 rates.json
 **/usage.json
+# Worker transcripts (server/src/worker_sessions.ts). In `npm run dev` DATA_DIR is
+# server/, so they would otherwise land in the repo.
+**/worker-sessions/
 **/rates.json
 
 # Environment & secrets

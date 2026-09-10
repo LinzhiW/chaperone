@@ -7,6 +7,7 @@ import os from 'os';
 import { getProvider, setProviderOverride, getProviderOverride, availableProviders, anyProviderReady, ProviderId, setUsageRecorder } from './providers';
 import { PM_CONSTRAINTS, PM_CHECKPOINT_CONSTRAINTS } from './pm_contract';
 import { resolveInWorkspace } from './workspace_path';
+import { WorkerTranscript, initWorkerSessions, saveTranscript, loadTranscript, appendTurn, historyFor } from './worker_sessions';
 import { loadRates, RATES_CHECKED, PRICING_SOURCES, effectiveRates, ratesFilePath } from './pricing';
 import { loadUsage, recordUsage, totals, totalsForScope, byModel, recentEntries } from './usage';
 import { ChatSession } from './providers/types';
@@ -28,6 +29,7 @@ dotenv.config({ path: ENV_PATH });
 // Metering has to be armed before anything can call a model.
 loadRates(DATA_DIR);
 loadUsage(DATA_DIR);
+initWorkerSessions(DATA_DIR);
 setUsageRecorder(recordUsage);
 
 const app = express();
@@ -54,6 +56,7 @@ const activeMissions = new Map<string, PendingAction>();
 interface PanelSession {
   session: ChatSession;   // provider-agnostic chat session
   workspacePath: string;
+  transcript: WorkerTranscript;  // what survives a restart; see worker_sessions.ts
 }
 const panelSessions = new Map<string, PanelSession>();
 const activePanels  = new Set<string>();  // panels with live SSE connection
@@ -447,18 +450,20 @@ app.post('/api/config', (req, res) => {
 async function commitWorkerChanges(
   workspacePath: string, branchName: string | undefined, message: string,
   sendEvent: (type: string, data: any) => void,
-) {
-  if (!branchName || !workspacePath) return;
+): Promise<number> {
+  if (!branchName || !workspacePath) return 0;
   try {
     const git = simpleGit(workspacePath);
-    if (!(await git.checkIsRepo())) return;
+    if (!(await git.checkIsRepo())) return 0;
     const status = await git.status();
-    if (status.files.length === 0) { sendEvent('log', { log: '> [GIT] No file changes to commit.' }); return; }
+    if (status.files.length === 0) { sendEvent('log', { log: '> [GIT] No file changes to commit.' }); return 0; }
     await git.add('.');
     await git.commit(message.slice(0, 200));
     sendEvent('log', { log: `> [GIT] Committed ${status.files.length} file(s) to ${branchName}` });
+    return status.files.length;
   } catch (err: any) {
     sendEvent('log', { log: `> [GIT] Commit skipped: ${err.message}` });
+    return 0;
   }
 }
 
@@ -469,40 +474,59 @@ async function runToolLoop(o: {
   workspacePath: string;
   sendEvent: (type: string, data: any) => void;
   firstMessage: string;
-}): Promise<'finished' | 'denied' | 'budget'> {
-  const { session, taskId, workspacePath, sendEvent } = o;
+  transcript: WorkerTranscript;
+}): Promise<{ outcome: 'finished' | 'denied' | 'budget'; finalText: string }> {
+  const { session, taskId, workspacePath, sendEvent, transcript } = o;
+  appendTurn(transcript, 'user', o.firstMessage);
   let turn = await session.sendMessage(o.firstMessage);
+  let finalText = '';
   for (let i = 0; i < TOOL_ROUNDS; i++) {
+    if (turn.text) { appendTurn(transcript, 'model', turn.text); finalText = turn.text; }
     if (turn.toolCalls.length === 0) {
       if (turn.text) sendEvent('log', { log: `> [FINAL] ${turn.text}` });
-      return 'finished';
+      return { outcome: 'finished', finalText };
     }
     for (const call of turn.toolCalls) {
       sendEvent('require_approval', { tool: call.name, args: call.args });
       const approved = await new Promise<boolean>(resolve =>
-        activeMissions.set(taskId, { resolve, toolCall: call }));
-      if (!approved) { sendEvent('log', { log: '> [DENIED] Stopping.' }); return 'denied'; }
+        activeMissions.set(String(taskId), { resolve, toolCall: call }));
+      const brief = `${call.name} ${JSON.stringify(call.args).slice(0, 200)}`;
+      if (!approved) {
+        appendTurn(transcript, 'model', `(asked to run ${brief})`);
+        appendTurn(transcript, 'user', '(denied by the user — stopped here)');
+        sendEvent('log', { log: '> [DENIED] Stopping.' });
+        return { outcome: 'denied', finalText };
+      }
 
       let output = '';
       if (call.name === 'run_shell') output = await runShell((call.args as any).command, workspacePath);
       else if (call.name === 'read_file') output = readFile((call.args as any).path, workspacePath);
       else if (call.name === 'write_file') output = writeFile((call.args as any).path, (call.args as any).content, workspacePath);
 
+      appendTurn(transcript, 'model', `(ran ${brief})`);
+      appendTurn(transcript, 'user', `(result) ${output.slice(0, 1500)}`);
       sendEvent('log', { log: `> [OUTPUT] ${output.substring(0, 300)}` });
       turn = await session.sendToolResults([{ name: call.name, result: output }]);
     }
   }
+  if (turn.text) { appendTurn(transcript, 'model', turn.text); finalText = turn.text; }
   // Running out of rounds used to look exactly like finishing: the loop fell out
   // and the changes were committed with no sign the agent had been cut off
   // mid-thought. Say it, and say it in the log the user is reading.
   sendEvent('log', { log: `> [STOPPED] Hit the ${TOOL_ROUNDS}-step limit for one turn. Whatever it changed is committed, but it was not finished — send it a message to continue.` });
-  return 'budget';
+  return { outcome: 'budget', finalText };
 }
 
 app.post('/api/approve-action', (req, res) => {
   const { taskId, approved } = req.body;
-  const pending = activeMissions.get(taskId);
-  if (pending) { pending.resolve(approved); activeMissions.delete(taskId); res.json({ success: true }); }
+  // Keyed as a string on both sides. The worker is registered under the taskId from
+  // its URL, which is always a string; the UI sends the assignment id from JSON,
+  // which is a number. A Map treats 9101 and '9101' as different keys, so every
+  // approval clicked in the app came back 404 and the worker waited forever at its
+  // first tool call — auto mode included, since auto approves through this too.
+  const key = String(taskId);
+  const pending = activeMissions.get(key);
+  if (pending) { pending.resolve(approved); activeMissions.delete(key); res.json({ success: true }); }
   else res.status(404).json({ error: 'Not found' });
 });
 
@@ -557,8 +581,10 @@ app.get('/api/execute-mission', async (req, res) => {
     const provider = getProvider(`mission:${taskId}`);
     const session = provider.startChat({ system: systemInstruction, tools: TOOL_DEFS });
 
-    // Store session so nudge endpoint can continue the conversation later
-    panelSessions.set(taskId, { session, workspacePath });
+    // Store session so nudge endpoint can continue the conversation later — and a
+    // transcript beside it, so that still works after the backend restarts.
+    const transcript: WorkerTranscript = { taskId, agent, system: systemInstruction, workspacePath, branchName, turns: [] };
+    panelSessions.set(taskId, { session, workspacePath, transcript });
     activePanels.add(taskId);
 
     const skillLog = loadedSkills.length > 0
@@ -566,10 +592,11 @@ app.get('/api/execute-mission', async (req, res) => {
       : '';
     sendEvent('log', { log: `> [SYSTEM] Agent initialized (${provider.modelLabel}${skillLog}).` });
 
-    const outcome = await runToolLoop({
-      session, taskId, workspacePath, sendEvent,
+    const { outcome } = await runToolLoop({
+      session, taskId, workspacePath, sendEvent, transcript,
       firstMessage: 'Begin. State your plan first.',
     });
+    saveTranscript(transcript);
     if (outcome === 'denied') { activePanels.delete(taskId); return res.end(); }
     await commitWorkerChanges(workspacePath, branchName, `worker(${agent}): ${taskName}`, sendEvent);
     activePanels.delete(taskId);
@@ -827,38 +854,60 @@ app.get('/api/panel/:panelId/nudge', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
-  const sendEvent = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}
-
-`);
+  const sendEvent = (type: string, data: any) => res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
 
   if (!message?.trim()) { sendEvent('log', { log: '> [ERROR] Nothing to send.' }); return res.end(); }
   if (activePanels.has(panelId)) {
     sendEvent('log', { log: '> [BUSY] This worker is mid-action — approve or deny what it is waiting on first.' });
     return res.end();
   }
-  const panel = panelSessions.get(panelId);
+
+  let panel = panelSessions.get(panelId);
+  let outgoing = message;
   if (!panel) {
-    // Sessions live in memory, so a backend restart loses them. Say which it is.
-    sendEvent('log', { log: '> [ERROR] This worker has no live session — it never started, or the backend restarted since. Start it again to pick the conversation back up.' });
-    return res.end();
+    // The live session is gone — the backend restarted, or the app was closed.
+    // Pick the worker back up from what it was told and what it did.
+    const saved = loadTranscript(panelId);
+    if (!saved) {
+      sendEvent('log', { log: '> [ERROR] This worker has no record — it never started. Start it to begin.' });
+      return res.end();
+    }
+    const { history, carry } = historyFor(saved);
+    const session = getProvider(`mission:${panelId}`).startChat({ system: saved.system, tools: TOOL_DEFS, history });
+    panel = { session, workspacePath: saved.workspacePath, transcript: saved };
+    panelSessions.set(panelId, panel);
+    if (carry) outgoing = `${carry}\n\n${message}`;
+    sendEvent('log', { log: `> [SYSTEM] Resumed from its saved conversation (${saved.turns.length} turns).` });
   }
 
   activePanels.add(panelId);
   try {
-    if (branchName) {
+    const branch = branchName || panel.transcript.branchName;
+    if (branch) {
       try {
         const git = simpleGit(panel.workspacePath);
-        if (await git.checkIsRepo()) await git.checkout(branchName);
+        if (await git.checkIsRepo()) await git.checkout(branch);
       } catch (err: any) {
-        sendEvent('log', { log: `> [GIT] Could not switch to ${branchName}: ${err.message}` });
+        sendEvent('log', { log: `> [GIT] Could not switch to ${branch}: ${err.message}` });
       }
     }
 
-    const outcome = await runToolLoop({
+    const { outcome, finalText } = await runToolLoop({
       session: panel.session, taskId: panelId, workspacePath: panel.workspacePath,
-      sendEvent, firstMessage: message,
+      sendEvent, firstMessage: outgoing, transcript: panel.transcript,
     });
-    if (outcome !== 'denied') await commitWorkerChanges(panel.workspacePath, branchName, `worker: ${message}`, sendEvent);
+    saveTranscript(panel.transcript);
+    if (outcome !== 'denied') {
+      const changed = await commitWorkerChanges(panel.workspacePath, branch, `worker: ${message}`, sendEvent);
+      // "Change it, then tell the PM." Talk that changed nothing stays in the
+      // worker's panel; a commit goes to the PM chat.
+      if (changed > 0) {
+        sendEvent('worker_update', {
+          asked: message, said: finalText, files: changed,
+          stoppedEarly: outcome === 'budget', agent: panel.transcript.agent,
+        });
+      }
+    }
   } catch (err: any) {
     sendEvent('log', { log: `> [CRITICAL ERROR] ${err.message}` });
   } finally {

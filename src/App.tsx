@@ -16,7 +16,7 @@ interface Message {
    *  containing the text "Dev log.md" grew an archive footer, so the PM merely
    *  naming that file — describing a folder, say — produced a report of work that
    *  had not happened, while the real archive notice never matched at all. */
-  kind?: 'archive' | 'mission-done';
+  kind?: 'archive' | 'mission-done' | 'worker-update';
   /** Which mission this message is about, for the buttons under it. */
   missionId?: string;
 }
@@ -2820,6 +2820,23 @@ const App: React.FC = () => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
         updateAssignment(missionId, assignmentId, a => ({ ...a, logs: [...a.logs, data.log] }));
+      } else if (data.type === 'worker_update') {
+        // A worker changed something after being told to. The PM has to hear it:
+        // this chat is the PM's memory, and a change it never heard of is one it
+        // will plan around wrongly. Nothing is accepted by this — it is the notice.
+        const zh = /[\u4e00-\u9fff]/.test(data.asked || '');
+        const said = String(data.said || '').slice(0, 600);
+        const early = data.stoppedEarly
+          ? (zh ? '\n\n它撞到步数上限停下了，还没做完。' : '\n\nIt hit the step limit and stopped before finishing.')
+          : '';
+        setPmMessages(prev => [...prev, {
+          role: 'model',
+          kind: 'worker-update',
+          missionId,
+          content: zh
+            ? `**${data.agent}** 按你说的改了 ${data.files} 个文件，提交在它自己的分支上。\n\n你说：${data.asked}\n\n它说：${said || '（没有说明）'}${early}`
+            : `**${data.agent}** changed ${data.files} file${data.files === 1 ? '' : 's'} on its own branch, at your word.\n\nYou said: ${data.asked}\n\nIt said: ${said || '(no explanation)'}${early}`,
+        }]);
       } else if (data.type === 'require_approval') {
         const mode = autonomyModeRef.current;
         const auto = mode === 'auto' || (mode === 'edits' && data.tool === 'read_file');
@@ -4324,6 +4341,7 @@ const App: React.FC = () => {
                       const isModel = msg.role === 'model';
                       const isArchiveMsg = isModel && msg.kind === 'archive';
                       const isMissionDone = isModel && msg.kind === 'mission-done' && !!msg.missionId;
+                      const isWorkerUpdate = isModel && msg.kind === 'worker-update' && !!msg.missionId;
                       // A missing or refused key surfaced here as a raw "[ERROR] API
                       // key missing" bubble — a dead end in the one place people
                       // spend their time. It is the only error they can fix
@@ -4373,6 +4391,11 @@ const App: React.FC = () => {
                                     Both were literals — nothing counts doc edits or compares
                                     the SOP, so the app was reporting changes it had not made. */}
                                 <button onClick={() => setActivePmTab('prd')} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Open PRD →</button>
+                              </div>
+                            )}
+                            {isWorkerUpdate && (
+                              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                                <button onClick={() => setActiveView(msg.missionId!)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Open the mission →</button>
                               </div>
                             )}
                             {isMissionDone && (
