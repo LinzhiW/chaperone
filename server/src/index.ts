@@ -5,6 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { getProvider, setProviderOverride, getProviderOverride, availableProviders, anyProviderReady, ProviderId, setUsageRecorder } from './providers';
+import { PM_CONSTRAINTS, PM_CHECKPOINT_CONSTRAINTS } from './pm_contract';
+import { resolveInWorkspace } from './workspace_path';
 import { loadRates, RATES_CHECKED, PRICING_SOURCES, effectiveRates, ratesFilePath } from './pricing';
 import { loadUsage, recordUsage, totals, totalsForScope, byModel, recentEntries } from './usage';
 import { ChatSession } from './providers/types';
@@ -99,7 +101,9 @@ const runShell = (command: string, workspacePath: string): Promise<string> => {
 };
 
 const readFile = (filePath: string, workspacePath: string): string => {
-  try { return fs.readFileSync(path.resolve(workspacePath, filePath), 'utf-8'); }
+  const r = resolveInWorkspace(filePath, workspacePath, false);
+  if (!r.ok) return r.error;
+  try { return fs.readFileSync(r.abs, 'utf-8'); }
   catch (err: any) { return `[ERROR] ${err.message}`; }
 };
 
@@ -121,10 +125,11 @@ const appendDoc = (rel: string, content: string, workspacePath: string): string 
 };
 
 const writeFile = (filePath: string, content: string, workspacePath: string): string => {
+  const r = resolveInWorkspace(filePath, workspacePath, true);
+  if (!r.ok) return r.error;
   try {
-    const fullPath = path.resolve(workspacePath, filePath);
-    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-    fs.writeFileSync(fullPath, content);
+    fs.mkdirSync(path.dirname(r.abs), { recursive: true });
+    fs.writeFileSync(r.abs, content);
     return `[OK] Wrote to ${filePath}`;
   } catch (err: any) { return `[ERROR] ${err.message}`; }
 };
@@ -579,6 +584,9 @@ app.post('/api/ceo/chat', async (req, res) => {
       : '';
 
     const systemPrompt = `${nonEnglish ? 'TOP PRIORITY: The user is writing in a non-English language (e.g. Chinese). You MUST write your entire reply in that same language — never English. This overrides any tendency to answer in English.\n\n' : ''}You are the Project Orchestrator (PM) of a multi-agent development platform.
+
+${PM_CONSTRAINTS}
+
 Context: Workspace files: ${fileList}.
 Available skills (use these exact names in skill_loadout): ${availableSkills}.${projectContext}
 
@@ -793,6 +801,16 @@ app.post('/api/init-project', (req, res) => {
   if (!projectPath) return res.status(400).json({ error: 'Missing projectPath' });
   try {
     const acDir = path.join(projectPath, '.chaperone');
+    // The product was called Canopy until a174e2c, and wrote its scaffolding to
+    // .canopy/. The rename covered the code and missed every project already on
+    // disk, so those kept a folder under the old name — no longer recognised, no
+    // longer hidden from the file walk, and so read aloud to the user by the PM as
+    // if some third-party framework had left it there. Carry it forward instead,
+    // which also keeps the PRD and Dev log written under the old name.
+    const legacyDir = path.join(projectPath, '.canopy');
+    if (fs.existsSync(legacyDir) && !fs.existsSync(acDir)) {
+      try { fs.renameSync(legacyDir, acDir); } catch { /* leave it; TREE_IGNORE hides it */ }
+    }
     fs.mkdirSync(acDir, { recursive: true });
     const starters: Record<string, string> = {
       'PRD.md': '# Product Requirements Document\n\n_Created by Chaperone. PM will populate this as you brief missions._\n',
@@ -981,7 +999,7 @@ app.post('/api/project-review', async (req, res) => {
     const readme = readMaybe(['README.md', 'readme.md', 'docs/README.md']);
     const pkg = readMaybe(['package.json'], 1500);
     let topLevel: string[] = [];
-    try { topLevel = fs.readdirSync(workspacePath).filter(f => !['node_modules', '.git', 'dist', '.next', '.chaperone'].includes(f)); } catch {}
+    try { topLevel = fs.readdirSync(workspacePath).filter(f => !TREE_IGNORE.has(f)); } catch {}
     let docs: string[] = [];
     try { const d = path.join(workspacePath, 'docs'); if (fs.existsSync(d)) docs = fs.readdirSync(d).slice(0, 30); } catch {}
     const prompt = `You are the PM. The user just pointed you at this project and asked you to get up to speed. Using ONLY the real files below, brief them.
@@ -1017,7 +1035,10 @@ ${docs.join(', ') || '(no docs/ folder)'}`;
 // Operating model: docs/PM_OPERATING_MODEL.md.
 
 const TREE_IGNORE = new Set([
-  'node_modules', '.git', 'dist', '.next', '.chaperone', 'build', 'out',
+  // '.canopy' is the pre-rename name of '.chaperone'. Projects opened before
+  // a174e2c still carry one; without this the PM lists and discusses Chaperone's
+  // own scaffolding as though it were part of the user's project.
+  'node_modules', '.git', 'dist', '.next', '.chaperone', '.canopy', 'build', 'out',
   'Library', 'Temp', 'Logs', '.vite', 'coverage', '.turbo', '.cache',
 ]);
 
@@ -1044,7 +1065,11 @@ function walkTree(root: string, maxFiles = 400, maxDepth = 5): string[] {
 
 // Concise embedded operating model — travels with the PM (not read from the target
 // workspace), per the "Chaperone ships its own copy" decision. Mirrors PM_OPERATING_MODEL.md.
-const PM_MODEL_PREAMBLE = `You are the PM (lead agent) of Chaperone, a multi-agent dev platform. The human is the CEO and makes the final call. Plan by this operating model:
+const PM_MODEL_PREAMBLE = `You are the PM (lead agent) of Chaperone, a multi-agent dev platform. The human is the CEO and makes the final call.
+
+${PM_CONSTRAINTS}
+
+Plan by this operating model:
 - Work is organized as vertical slices. Find the GOLDEN PATH: the serial chain of required slices with HARD dependencies — they cannot be built in parallel because they share foundation (auth, data model, routing, shared state, API client, core pages). Separate these from beta/launch SUPPORT slices.
 - FOUNDATION FILES = real files multiple slices must touch (schema/migrations, routing, shared state, API client, shared components, core pages/data flow, backend contracts). Name the REAL ones from the file tree.
 - FOUNDATION VOLATILITY = how much those files are still changing. High if the active path spans many of them or they look unstable/early.
@@ -1224,6 +1249,9 @@ app.post('/api/pm/explore', async (req, res) => {
 
   const system = `You are the PM (lead agent) of Chaperone for THIS project. The CEO just asked you to get up to speed on it.
 
+${PM_CONSTRAINTS}
+
+
 You have READ-ONLY tools — actually USE them to explore, the way a capable engineer would: call list_files to see what exists, then read the files that reveal what this project is (README, package.json, docs/*, key source/config). You decide what to open — read whatever you need before answering. Do not guess about something you could just read.
 
 When you're done exploring, tell the CEO — in their own language — what this project actually IS (purpose/product), its tech stack, and its current state. Format as short, scannable Markdown with a few bold mini-headings. Be specific and grounded in what you read; if something genuinely isn't in the files, say so.${langName ? `\n\nIMPORTANT: Write your entire final briefing in ${langName}. Not English.` : ''}${
@@ -1302,6 +1330,9 @@ app.post('/api/pm/draft-docs', async (req, res) => {
 
   const system = `You are the PM (lead agent) of Chaperone for THIS project. The CEO asked you to draft the long-term memory documents this project is missing.
 
+${PM_CONSTRAINTS}
+
+
 First, explore with your READ-ONLY tools — list_files, then read what tells you what this project is (README, package.json, docs/*, key source and config). Do not guess about anything you could read.
 
 ${requested.length
@@ -1367,6 +1398,9 @@ app.post('/api/pm/progress-report', async (req, res) => {
     /ko|[가-힯]/.test(langCode)    ? '한국어 (Korean)' : '';
 
   const system = `You are the PM (lead agent) for THIS project. The CEO is asking where the project stands right now.
+
+${PM_CONSTRAINTS}
+
 
 You have READ-ONLY tools — USE them. Read the project's REAL progress sources: docs/PROGRESS.md, docs/MVP.md, docs/ACCEPTANCE.md, docs/PROJECT_STATE.md, docs/TODO.md, docs/PLAN.md, or any status/roadmap docs you find. Read whatever you need before answering — do not guess.
 
@@ -1437,6 +1471,9 @@ app.post('/api/pm/checkpoint', async (req, res) => {
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
 
   const system = `You are the PM. The CEO is about to CLEAR this conversation. Before it's gone, PRESERVE anything important so nothing is lost — because your real memory lives in the project docs, not the chat.
+
+${PM_CHECKPOINT_CONSTRAINTS}
+
 
 Review the conversation. Then:
 1. For each real DECISION reached (a choice, a direction, a tradeoff settled), append it to docs/DECISIONS.md. First read_file docs/DECISIONS.md to match its format; if it doesn't exist, create a sensible entry with today's date (${now}).

@@ -11,6 +11,12 @@ interface Message {
   role: string;
   content: string;
   groundingSources?: { uri: string; title: string }[];
+  /** Set when this message IS the archive notice, so the footer under it does not
+   *  have to be guessed from the wording. It used to be guessed: any PM message
+   *  containing the text "Dev log.md" grew an archive footer, so the PM merely
+   *  naming that file — describing a folder, say — produced a report of work that
+   *  had not happened, while the real archive notice never matched at all. */
+  kind?: 'archive';
 }
 
 interface Assignment {
@@ -855,12 +861,15 @@ function WorkerTile({ assignment, color, workerIndex, onStart, onApprove, nudgeI
           /* 3.12 — done: commit stats + test status + links */
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 0' }}>
             <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--ink-2)' }}>
+              {/* Only what `git` actually reported. The fallback here used to be the
+                  log-line count plus 3 commits and plus 4 files, and the line below it
+                  read "✓ tests pass · coverage {75 + id % 20}%" — a passing test run and
+                  a coverage figure computed from the worker's id. Nothing runs tests. */}
               {branchStat && branchStat.commits > 0
                 ? <><span><strong>{branchStat.commits}</strong> commits</span><span><strong>{branchStat.files}</strong> files</span></>
-                : <><span><strong>{assignment.logs.filter(l => l.includes('[EXEC]')).length + 3}</strong> commits</span><span><strong>{assignment.logs.filter(l => l.includes('[OUTPUT]')).length + 4}</strong> files</span></>
+                : <span style={{ color: 'var(--ink-3)' }}>branch stats not read yet</span>
               }
             </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--approve)' }}>✓ tests pass · coverage {75 + (assignment.id % 20)}%</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 'auto', display: 'flex', gap: 6 }}>
               <span title={NOT_WIRED_TITLE} style={{ textDecoration: 'underline', ...NOT_WIRED }}>view branch diff</span>
               <span>·</span>
@@ -1283,8 +1292,13 @@ function ReviewerPanel({ mission, workspacePath, onSendBack, onArchive, onViewDi
     return { assignment: a, idx: i, count, types };
   });
 
-  const branchStatuses: Record<string, 'approved' | 'pending' | 'waiting'> = {};
-  mission.assignments.forEach((a, i) => { branchStatuses[a.branchName] = i < 2 ? 'approved' : i === 2 ? 'waiting' : 'approved'; });
+  // A branch is ticked when it has actually been merged. This was `i < 2 ? 'approved'
+  // : i === 2 ? 'waiting' : 'approved'` — the tick came from the position in the array,
+  // so the first two workers always showed as approved before anyone had looked.
+  const branchStatuses: Record<string, 'approved' | 'waiting'> = {};
+  mission.assignments.forEach(a => {
+    branchStatuses[a.branchName] = (mission.mergedBranches || []).includes(a.branchName) ? 'approved' : 'waiting';
+  });
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
@@ -1479,210 +1493,12 @@ const SOP_SECTIONS_DEF = [
   { key: 'Review checklist', label: '§ Review checklist', subtitle: 'What the Reviewer checks before archive.' },
 ];
 
-function PMTab_PRD({ edits, onApprove, onReject, onApproveAll, onRejectAll, activeSection, onSectionChange }: {
-  edits: PrdEdit[];
-  onApprove: (section: string) => void;
-  onReject: (section: string) => void;
-  onApproveAll: () => void;
-  onRejectAll: () => void;
-  activeSection: string;
-  onSectionChange: (s: string) => void;
-}) {
-  const pendingCount = edits.filter(e => e.status === 'pending').length;
-  const pendingBySection = (sec: string) => edits.filter(e => e.section === sec && e.status === 'pending').length;
-  const editsBySection = (sec: string) => edits.filter(e => e.section === sec && e.status !== 'rejected');
+// PMTab_PRD and PMTab_SOP stood here. Neither was ever rendered — no call site in
+// the app — and both carried invented content: a PRD review screen over a fixed
+// list of edits, and an SOP asserting rules nothing enforces ("Coverage minimum:
+// 80% on touched files", "Reviewer will flag Missing..."). The real doc viewer that
+// replaced them reads the project's own files. Deleting the pictures of them.
 
-  return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {/* Section nav */}
-      <div style={{ flex: '0 0 180px', borderRight: '1.5px solid var(--rule)', background: 'var(--paper-2)', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Sections</div>
-        {PRD_SECTIONS_DEF.map(s => {
-          const p = pendingBySection(s.key);
-          const active = activeSection === s.key;
-          return (
-            <div key={s.key} onClick={() => onSectionChange(s.key)} style={{
-              padding: '5px 8px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
-              background: active ? 'var(--pm)' : 'transparent',
-              color: active ? 'var(--paper)' : 'var(--ink-2)',
-              display: 'flex', alignItems: 'center', gap: 6, fontWeight: active ? 600 : 500,
-            }}>
-              <span style={{ flex: 1 }}>{s.label}</span>
-              {p > 0 && <span style={{ minWidth: 16, padding: '0 5px', borderRadius: 99, fontSize: 9, fontWeight: 700, background: active ? 'var(--paper)' : 'var(--review)', color: active ? 'var(--review)' : 'var(--paper)', textAlign: 'center' }}>{p}</span>}
-            </div>
-          );
-        })}
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8 }}>
-          <button className="btn" style={{ fontSize: 11, padding: '5px 8px', borderRadius: 3, border: '1.5px dashed var(--rule-soft)', background: 'var(--paper)', color: 'var(--ink-3)' }}>＋ Add section</button>
-          <button className="btn" style={{ fontSize: 10, padding: '4px 8px', borderRadius: 3, border: '1px solid var(--rule-soft)', background: 'var(--paper)', color: 'var(--ink-3)' }}>↗ View raw markdown</button>
-        </div>
-      </div>
-
-      {/* Doc */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {pendingCount > 0 && (
-          <div style={{ padding: '8px 18px', background: 'var(--pm-soft)', borderBottom: '1.5px solid var(--pm)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, color: 'var(--pm)', fontWeight: 700 }}>⚠ PM proposed {pendingCount} edit{pendingCount > 1 ? 's' : ''} to this PRD</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>after last archive. Each section shows a diff — approve / reject per section.</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)' }}>HITL · your call</span>
-          </div>
-        )}
-
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 22px' }}>
-          <div style={{ maxWidth: 660, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {PRD_SECTIONS_DEF.map(s => {
-              const pending = pendingBySection(s.key);
-              const sectionEdits = editsBySection(s.key);
-              return (
-                <section key={s.key} style={{
-                  border: pending > 0 ? '1.5px solid var(--review)' : '1.5px solid var(--rule)',
-                  borderRadius: 5, background: 'var(--paper)', padding: '12px 16px',
-                  display: 'flex', flexDirection: 'column', gap: 8, position: 'relative',
-                }}>
-                  {pending > 0 && (
-                    <span style={{ position: 'absolute', top: -9, right: 12, background: 'var(--review)', color: 'var(--paper)', fontSize: 9, fontWeight: 700, letterSpacing: 0.4, padding: '2px 7px', borderRadius: 99 }}>{pending} pending</span>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>§ {s.key}</h3>
-                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{s.subtitle}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)', cursor: 'pointer' }}>✎ edit</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {/* Static content per section */}
-                    {s.key === 'Overview' && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--ink-2)' }}>A local-first React app. Lives in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/project</span>. Focus: keyboard-first, clean, extensible.</p>}
-                    {s.key === 'Goals' && <>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Ship features faster by running workers in parallel.</span></div>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Keep the PM as the single source of project truth.</span></div>
-                    </>}
-                    {s.key === 'Personas' && <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Solo developer managing a multi-worker AI team.</span></div>}
-                    {s.key === 'Features' && <>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Add / edit / archive items with optimistic save.</span></div>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Filter by tag (local persistence).</span></div>
-                    </>}
-                    {s.key === 'Non-goals' && <>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>No multi-user / sync. Local only.</span></div>
-                    </>}
-                    {s.key === 'Constraints' && <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Must run offline. No cloud dependency.</span></div>}
-                    {s.key === 'Open questions' && <div style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>No open questions — all resolved in last review.</div>}
-
-                    {/* PM proposed additions */}
-                    {sectionEdits.map(e => (
-                      <div key={e.id} style={{ display: 'flex', gap: 6, background: e.status === 'approved' ? 'var(--approve-soft)' : 'var(--approve-soft)', color: 'var(--approve)', padding: '4px 8px', borderRadius: 3, fontSize: 12.5, lineHeight: 1.5, border: `1px solid ${e.status === 'approved' ? 'var(--approve)' : 'var(--approve)'}`, opacity: e.status === 'approved' ? 0.7 : 1 }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>+</span>
-                        <span style={{ flex: 1, color: 'var(--ink)' }}>{e.content}</span>
-                        <span style={{ fontSize: 9, color: 'var(--ink-3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{e.status === 'approved' ? '✓ approved' : 'PM'}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {pending > 0 && (
-                    <div style={{ marginTop: 4, padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--paper-2)', borderRadius: 3, border: '1px dashed var(--rule-soft)' }}>
-                      <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{pending} PM addition{pending > 1 ? 's' : ''} in this section</span>
-                      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                        <button onClick={() => onReject(s.key)} className="btn" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 3, background: 'var(--paper)', border: '1px solid var(--rule)', color: 'var(--ink-2)', cursor: 'pointer' }}>Reject section</button>
-                        <button onClick={() => onApprove(s.key)} className="btn" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 3, background: 'var(--approve)', border: '1px solid var(--approve)', color: 'var(--paper)', fontWeight: 600, cursor: 'pointer' }}>✓ Approve section</button>
-                      </span>
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        </div>
-
-        {pendingCount > 0 && (
-          <div style={{ padding: '10px 18px', borderTop: '1.5px solid var(--rule)', background: 'var(--paper-2)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{pendingCount} pending edit{pendingCount > 1 ? 's' : ''} across {[...new Set(edits.filter(e => e.status === 'pending').map(e => e.section))].length} section{[...new Set(edits.filter(e => e.status === 'pending').map(e => e.section))].length > 1 ? 's' : ''}</span>
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <button onClick={onRejectAll} className="btn" style={{ fontSize: 11, padding: '5px 12px', borderRadius: 4, border: '1.5px solid var(--rule)', background: 'var(--paper)', cursor: 'pointer' }}>Reject all</button>
-              <button onClick={onApproveAll} className="btn" style={{ fontSize: 11, padding: '5px 12px', borderRadius: 4, border: '1.5px solid var(--approve)', background: 'var(--approve)', color: 'var(--paper)', fontWeight: 700, cursor: 'pointer' }}>✓ Approve all PM edits</button>
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PMTab_SOP({ activeSection, onSectionChange }: { activeSection: string; onSectionChange: (s: string) => void; }) {
-  const SOP_CONTENT: Record<string, React.ReactNode> = {
-    Branching: <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Each <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>worker</span> creates exactly one branch from <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>main</span>.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Naming: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>feat/{'<mission-slug>'}-{'<short-scope>'}</span></span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Workers never push to <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>main</span>. Reviewer + your decision is required.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>PM never creates branches. PM only writes plan + maintains docs.</span></div>
-    </>,
-    Commits: <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Conventional commits: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>feat: / fix: / chore: / docs: / test:</span></span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Body line 1 ≤ 72 chars. Imperative ("add", not "added").</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Worker commits show <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>[W{'<n>'}]</span> tag for cross-branch traceability.</span></div>
-    </>,
-    Testing: <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Coverage minimum: <strong>80%</strong> on touched files.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Tests live next to source: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>foo.ts</span> ↔ <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>foo.test.ts</span></span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Reviewer will flag <strong>Missing</strong> for any new public function without a test.</span></div>
-    </>,
-    Naming: <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Components: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>PascalCase</span>. Hooks: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>useXxx</span>. Utils: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>camelCase</span>.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Files match their default export. One component per file.</span></div>
-    </>,
-    'Code style': <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>ESLint + Prettier. No unresolved lint warnings at commit time.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>TypeScript strict mode. No implicit <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>any</span>.</span></div>
-    </>,
-    'Review checklist': <>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>All tests green before calling Reviewer.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>No console.log or debug statements in commits.</span></div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}><span style={{ color: 'var(--ink-3)' }}>•</span><span>Each branch has at least one meaningful commit message.</span></div>
-    </>,
-  };
-  const activeDef = SOP_SECTIONS_DEF.find(s => s.key === activeSection) ?? SOP_SECTIONS_DEF[1];
-
-  return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {/* Categories nav */}
-      <div style={{ flex: '0 0 180px', borderRight: '1.5px solid var(--rule)', background: 'var(--paper-2)', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Categories</div>
-        {SOP_SECTIONS_DEF.map(s => {
-          const active = activeSection === s.key;
-          return (
-            <div key={s.key} onClick={() => onSectionChange(s.key)} style={{
-              padding: '5px 8px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
-              background: active ? 'var(--pm)' : 'transparent',
-              color: active ? 'var(--paper)' : 'var(--ink-2)',
-              fontWeight: active ? 600 : 500,
-            }}>{s.label}</div>
-          );
-        })}
-        <div style={{ marginTop: 'auto', paddingTop: 8 }}>
-          <button className="btn" style={{ fontSize: 11, padding: '5px 8px', borderRadius: 3, border: '1.5px dashed var(--rule-soft)', background: 'var(--paper)', color: 'var(--ink-3)', width: '100%' }}>＋ Add category</button>
-        </div>
-      </div>
-
-      {/* Doc */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '8px 18px', background: 'var(--paper-2)', borderBottom: '1.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)' }}>SOP.md · {activeDef.label}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)' }}>stable · edit to add rules</span>
-          <button className="btn" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 3, border: '1px solid var(--rule-soft)', background: 'var(--paper)', color: 'var(--ink-3)', cursor: 'pointer' }}>↗ View raw</button>
-        </div>
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 22px' }}>
-          <div style={{ maxWidth: 660, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <section style={{ border: '1.5px solid var(--rule)', borderRadius: 5, background: 'var(--paper)', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{activeDef.label}</h3>
-                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{activeDef.subtitle}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)', cursor: 'pointer' }}>✎ edit</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {SOP_CONTENT[activeSection] ?? <div style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>No content yet — click ✎ edit to add rules.</div>}
-              </div>
-            </section>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function PMTab_DevLog({ archivedMissions, selectedIdx, onSelectIdx, editMode, onToggleEdit }: {
   archivedMissions: Array<{id: string; name: string; startedAt?: string; assignments: {id: number}[]; reviewerAnnotations?: {type: string}[]}>;
@@ -3061,6 +2877,7 @@ const App: React.FC = () => {
     setTimeout(() => setArchiveToast(null), 5000);
     setPmMessages(prev => [...prev, {
       role: 'model',
+      kind: 'archive',
       content: `Archived "${name}" — the mission is closed and logged. Merged branches are already in your base branch.`,
     }]);
   };
@@ -4416,7 +4233,7 @@ const App: React.FC = () => {
                     {/* Additional PM messages (e.g. post-archive notification) */}
                     {pmMessages.slice(1).map((msg, i) => {
                       const isModel = msg.role === 'model';
-                      const isArchiveMsg = isModel && msg.content.includes('Dev log.md');
+                      const isArchiveMsg = isModel && msg.kind === 'archive';
                       // A missing or refused key surfaced here as a raw "[ERROR] API
                       // key missing" bubble — a dead end in the one place people
                       // spend their time. It is the only error they can fix
@@ -4462,8 +4279,10 @@ const App: React.FC = () => {
                             {isArchiveMsg && (
                               <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                                 <button onClick={() => { setActivePmTab('devlog'); setDevLogNew(false); }} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--pm)', color: 'var(--paper)', border: '1.5px solid var(--pm)', fontWeight: 600, cursor: 'pointer' }}>Open Dev log →</button>
-                                <button onClick={() => setActivePmTab('prd')} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Review PRD edits (3) →</button>
-                                <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>SOP unchanged</span>
+                                {/* "Review PRD edits (3)" and "SOP unchanged" used to sit here.
+                                    Both were literals — nothing counts doc edits or compares
+                                    the SOP, so the app was reporting changes it had not made. */}
+                                <button onClick={() => setActivePmTab('prd')} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Open PRD →</button>
                               </div>
                             )}
                           </div>

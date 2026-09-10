@@ -45,12 +45,26 @@ the `NOT_WIRED` constant, which is the way to find them in code.
   feature has no backend, no state, and no way to add one — the "select text to
   add a comment" hint below it is also aspirational.
 
+A later sweep specifically for invented numbers found five more. All are gone; the
+rule now is that a figure shown to the user is one the app actually measured, and
+anything else shows nothing rather than something plausible.
+
+| Was | Where | What it really was |
+| --- | --- | --- |
+| `✓ tests pass · coverage 75–94%` | Worker tile, done state | `75 + (assignment.id % 20)`. Nothing runs tests. It always said they passed. |
+| `N commits · M files` | Worker tile, done state | Real `git` numbers when available; otherwise log-line count **plus 3** and **plus 4**. Now says "branch stats not read yet". |
+| Per-branch ✓ / … ticks | Reviewer, per-branch review | `i < 2 ? 'approved' : i === 2 ? 'waiting' : 'approved'` — approval read off the array index. Now reads `mission.mergedBranches`. |
+| `Review PRD edits (3)` + `SOP unchanged` | Archive footer in PM chat | Both literals. Nothing counts doc edits or compares the SOP. Now one `Open PRD →` button. |
+| The archive footer itself | PM chat | Shown on any PM message containing the text `Dev log.md`, so the PM merely *naming* that file grew a report of work that never happened — while the real archive notice, which does not contain that string, never matched. Now a `kind: 'archive'` flag set where the archive actually happens. |
+
+- `PMTab_PRD` and `PMTab_SOP` are deleted. Neither had a render site, and both
+  carried invented content — a PRD review over a fixed edit list, and an SOP
+  asserting rules nothing enforces ("Coverage minimum: 80% on touched files").
+
 ### Dead code (never rendered — no user impact)
 
-- `PMTab_PRD` and `PMTab_SOP` have zero render sites. They contain their own five
-  dead buttons and a block commented `{/* Static content per section */}`. The
-  real doc viewer that replaced them notes "No demo data". Safe to delete; left
-  alone here because that is a cleanup decision, not an audit finding.
+- `PMTab_PRD` and `PMTab_SOP` were listed here as safe to delete. They have been
+  deleted; see the fake-data table above for why they were more than dead weight.
 
 ## Already fixed, for the record
 

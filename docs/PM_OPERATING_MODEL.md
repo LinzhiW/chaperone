@@ -13,6 +13,45 @@
 
 ---
 
+## 0 · House rules — what the PM may do, and may say it can do
+
+The rest of this document specs how the PM plans. This section specs what it is
+allowed to claim, which turns out to need saying separately.
+
+The harness already enforces the doing. The PM is handed two tools, `list_files`
+and `read_file`, and there is no third one; every path they resolve is checked
+against the project folder (`server/src/workspace_path.ts`, tested in
+`server/test/`). It cannot change anything, whatever it decides it wants.
+
+It enforces nothing about the saying. A language model will agree to whatever it
+is asked, so a PM with no write tool still answers "sure, we can migrate those
+files for you" — and the user, reasonably, plans around it. **That gap is what a
+harness like Chaperone is for.** The model is not ours and we cannot make it think
+differently. The rules of conduct are ours, and they only exist if they are written
+down and shipped with the prompt.
+
+They are, in **`server/src/pm_contract.ts`** — one constant, carried by every prompt
+the PM receives. In short:
+
+| | |
+| --- | --- |
+| **Can** | Read. List files, read files. That is the whole of it. |
+| **Cannot** | Create, edit, move, rename, merge or delete anything. |
+| **Must not claim** | Any of the above — no "I'll update that", no "shall I move it for you". |
+| **Must not invent** | A count, a filename, a test result, a coverage figure or a status it has not read. |
+| **Must not touch** | `.chaperone/` (and `.canopy/`, its pre-rename name) — Chaperone's own scaffolding, not the user's project. |
+
+The route by which anything changes is unchanged and singular: the PM proposes a
+mission, the user dispatches it, workers do the work on their own branches, the
+user approves each merge. The PM is not on that route at any point.
+
+The one exception is the checkpoint flow — clearing a conversation first preserves
+what was decided into the project's docs, so the transcript is not the only copy.
+It may append to `docs/*.md` and nothing else, enforced by `appendDoc()`, and it
+carries its own narrower rules (`PM_CHECKPOINT_CONSTRAINTS`).
+
+---
+
 ## 1 · Org chart — who does what
 
 ```

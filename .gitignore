@@ -60,3 +60,7 @@ docs/screenshots/regression_*
 docs/DEV_PLAN.md
 docs/DESIGN_NOTES.md
 .design/agent-company/project/CLAUDE_CODE_KICKOFF.md
+
+# Chaperone runtime state for whatever project it is pointed at — including this
+# one, when the app is run on itself. Per-user working data, not source.
+.chaperone/
