@@ -16,7 +16,9 @@ interface Message {
    *  containing the text "Dev log.md" grew an archive footer, so the PM merely
    *  naming that file — describing a folder, say — produced a report of work that
    *  had not happened, while the real archive notice never matched at all. */
-  kind?: 'archive';
+  kind?: 'archive' | 'mission-done';
+  /** Which mission this message is about, for the buttons under it. */
+  missionId?: string;
 }
 
 interface Assignment {
@@ -47,6 +49,9 @@ interface Mission {
   reviewerLog?: string[];
   reviewerAnnotations?: ReviewAnnotation[];
   mergedBranches?: string[];
+  /** Set the first time the Reviewer is actually called. The button said
+   *  "Call Reviewer again" before anyone had called it once. */
+  reviewed?: boolean;
 }
 
 interface Skill { id: number; name: string; source: string; category: string; description?: string; }
@@ -2365,6 +2370,37 @@ const App: React.FC = () => {
     }
   }, [missions, config.projectPath, backendStatus]);
 
+  /**
+   * Tell the PM chat when a mission's workers have all finished.
+   *
+   * Dispatch leaves you in the chat on purpose, and a lot of people stay there
+   * waiting to be told rather than watching the worker tiles. Nothing ever told
+   * them: of everything written into this chat — dispatch, archive, errors — there
+   * was no message for the work being done. The mission just went quiet.
+   *
+   * Nothing is recorded as accepted here. This is the notice; the decision is
+   * still the human's, and the record follows the decision.
+   */
+  const announcedDoneRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const m of missions) {
+      if (m.status !== 'running' || m.assignments.length === 0) continue;
+      if (!m.assignments.every(a => a.status === 'done')) continue;
+      if (announcedDoneRef.current.has(m.id)) continue;
+      announcedDoneRef.current.add(m.id);
+      const zh = /[一-鿿]/.test(m.name);
+      const did = m.assignments.map(a => `· ${a.agentId} — ${a.task}`).join('\n');
+      setPmMessages(prev => [...prev, {
+        role: 'model',
+        kind: 'mission-done',
+        missionId: m.id,
+        content: zh
+          ? `**${m.name}** 的 ${m.assignments.length} 个 worker 都做完了，还没有人看过。\n\n${did}\n\n还有要改的吗？改动可以直接跟对应的 worker 说。没有的话我叫 Reviewer 验一遍。`
+          : `All ${m.assignments.length} workers on **${m.name}** have finished. Nobody has looked at it yet.\n\n${did}\n\nAnything you want changed? You can say so to the worker that did it. If not, I'll have the Reviewer go over it.`,
+      }]);
+    }
+  }, [missions]);
+
   // ─── Handlers ────────────────────────────────────────────────────────────────
 
   const refreshFiles = async () => {
@@ -2835,7 +2871,7 @@ const App: React.FC = () => {
     const mission = missions.find(m => m.id === missionId);
     if (!mission) return;
     setMissions(prev => prev.map(m => m.id !== missionId ? m : {
-      ...m, status: 'reviewing' as const, reviewerLog: [], reviewerAnnotations: undefined,
+      ...m, status: 'reviewing' as const, reviewerLog: [], reviewerAnnotations: undefined, reviewed: true,
     }));
     const branches = mission.assignments.map(a => a.branchName);
     const tasks: Record<string, string> = {};
@@ -4281,6 +4317,7 @@ const App: React.FC = () => {
                     {pmMessages.slice(1).map((msg, i) => {
                       const isModel = msg.role === 'model';
                       const isArchiveMsg = isModel && msg.kind === 'archive';
+                      const isMissionDone = isModel && msg.kind === 'mission-done' && !!msg.missionId;
                       // A missing or refused key surfaced here as a raw "[ERROR] API
                       // key missing" bubble — a dead end in the one place people
                       // spend their time. It is the only error they can fix
@@ -4330,6 +4367,12 @@ const App: React.FC = () => {
                                     Both were literals — nothing counts doc edits or compares
                                     the SOP, so the app was reporting changes it had not made. */}
                                 <button onClick={() => setActivePmTab('prd')} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Open PRD →</button>
+                              </div>
+                            )}
+                            {isMissionDone && (
+                              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                                <button onClick={() => setActiveView(msg.missionId!)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--paper)', color: 'var(--pm)', border: '1.5px solid var(--pm)', cursor: 'pointer' }}>Open the mission →</button>
+                                <button onClick={() => callReviewer(msg.missionId!)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 3, background: 'var(--warn)', color: '#fff', border: '1.5px solid var(--warn)', fontWeight: 600, cursor: 'pointer' }}>Call Reviewer</button>
                               </div>
                             )}
                           </div>
@@ -4662,13 +4705,15 @@ const App: React.FC = () => {
                   <div className="box" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--approve-soft)', borderColor: 'var(--approve)', flexShrink: 0 }}>
                     <span style={{ fontSize: 20 }}>✓</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--approve)' }}>All {activeMission.assignments.length} workers finished · mission ready to archive</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--approve)' }}>
+                        All {activeMission.assignments.length} workers finished · {activeMission.reviewed ? 'reviewed — your call' : 'waiting on you'}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 2 }}>
                         {totalCommits > 0 ? `${totalCommits} commits across ${activeMission.assignments.length} branches · ` : ''}0 HITL pending · last activity {activeMission.startedAt ?? '--:--'}
                       </div>
                     </div>
                     <button onClick={() => callReviewer(activeMission.id)} style={{ fontSize: 11, padding: '5px 12px', border: '1.5px solid var(--rule)', background: 'var(--paper)', borderRadius: 4, cursor: 'pointer' }}>
-                      Call Reviewer again
+                      {activeMission.reviewed ? 'Call Reviewer again' : 'Call Reviewer'}
                     </button>
                     <button onClick={() => archiveMission(activeMission.id)} style={{ fontSize: 12, padding: '7px 14px', border: '1.5px solid var(--approve)', background: 'var(--approve)', color: 'var(--paper)', borderRadius: 4, fontWeight: 700, cursor: 'pointer' }}>
                       ✓ Archive to PM dev log
@@ -4722,14 +4767,17 @@ const App: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Reviewer strip — shown while workers still running (not done yet) */}
-                {!allDone && (
+                {/* Reviewer strip. It used to render only while workers were still
+                    running and vanish the moment they all finished — hiding the button
+                    at exactly the point you would reach for it. Reviewing is what you
+                    do when the work is finished, so that is when it appears. */}
+                {allDone && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--paper)', border: '1.5px solid var(--rule)', borderRadius: 7, flexShrink: 0 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, background: 'rgba(194,120,50,0.1)', color: 'var(--warn)', border: '1px solid rgba(194,120,50,0.3)', borderRadius: 3, padding: '2px 7px', whiteSpace: 'nowrap' }}>REVIEWER</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Iterate with workers until satisfied, then summon Reviewer to bundle a cross-branch report.</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Change anything you want with the worker that did it. When you are satisfied, the Reviewer bundles a cross-branch report.</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{doneCount} of {activeMission.assignments.length} workers done</span>
                     <button onClick={() => callReviewer(activeMission.id)} style={{ fontSize: 12, padding: '5px 14px', background: 'var(--warn)', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      Call Reviewer
+                      {activeMission.reviewed ? 'Call Reviewer again' : 'Call Reviewer'}
                     </button>
                   </div>
                 )}
