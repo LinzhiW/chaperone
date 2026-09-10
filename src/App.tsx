@@ -858,7 +858,7 @@ function WorkerTile({ assignment, color, workerIndex, onStart, onApprove, nudgeI
             <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.6 }}>
               will start when a slot opens
             </div>
-            <div style={{ fontSize: 10, color: 'var(--ink-3)', opacity: 0.6 }}>max 3 concurrent workers</div>
+            <div style={{ fontSize: 10, color: 'var(--ink-3)', opacity: 0.6 }}>max 4 workers running at once, across the project</div>
           </div>
         ) : isDone ? (
           /* 3.12 — done: commit stats + test status + links */
@@ -2328,22 +2328,42 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [activeView, config.projectPath]);
 
+  /**
+   * How many workers may run at once, counted across the whole project — not per
+   * mission and not per conversation. The limit exists because they share one
+   * repository and one machine, and neither of those cares how the work was
+   * briefed. Four, which is what the 2x2 mission grid is built for.
+   */
+  const MAX_CONCURRENT_WORKERS = 4;
+
   // Auto-start dispatched workers. The mission was already approved by the CEO, so each
   // worker should actually run (execute-mission) — it then PAUSES at every tool call for
   // HITL approval. Without this, workers sat at "booting" forever (onStart was never wired
   // to any trigger). Guard with a ref so each worker starts exactly once.
+  //
+  // Two things used to go wrong here. It began `if (activeView === 'pm') return`, so
+  // workers only started while you were looking at that mission — and dispatch
+  // deliberately leaves you in the PM chat, so anyone who dispatched and waited for
+  // the PM to report back waited forever, with nothing running. And the cap was
+  // `idx < 3`: a limit on the position in the array rather than on how many are
+  // actually running, so a fourth worker never started no matter how many finished,
+  // under a tile promising it would start "when a slot opens".
   const startedWorkersRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    if (activeView === 'pm' || !config.projectPath || backendStatus !== 'online') return;
-    const mission = missions.find(m => m.id === activeView);
-    if (!mission || mission.status !== 'running') return;
-    mission.assignments.forEach((a, idx) => {
-      if (a.status === 'proposed' && idx < 3 && !startedWorkersRef.current.has(a.id)) {
+    if (!config.projectPath || backendStatus !== 'online') return;
+    let running = missions.reduce(
+      (n, m) => n + m.assignments.filter(a => a.status === 'running').length, 0);
+    for (const mission of missions) {
+      if (mission.status !== 'running') continue;
+      for (const a of mission.assignments) {
+        if (running >= MAX_CONCURRENT_WORKERS) return;
+        if (a.status !== 'proposed' || startedWorkersRef.current.has(a.id)) continue;
         startedWorkersRef.current.add(a.id);
         startWorker(mission.id, a.id);
+        running++;
       }
-    });
-  }, [activeView, missions, config.projectPath, backendStatus]);
+    }
+  }, [missions, config.projectPath, backendStatus]);
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
 

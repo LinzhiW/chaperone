@@ -61,6 +61,8 @@ docs/DEV_PLAN.md
 docs/DESIGN_NOTES.md
 .design/agent-company/project/CLAUDE_CODE_KICKOFF.md
 
-# Chaperone runtime state for whatever project it is pointed at — including this
-# one, when the app is run on itself. Per-user working data, not source.
-.chaperone/
+# Chaperone's folder holds two different kinds of thing, and they belong on
+# opposite sides of this file. PRD.md / SOP.md / Dev log.md are the project's
+# long-term memory — the equivalent of a CLAUDE.md, worth committing and worth
+# sharing. The rest is per-run bookkeeping for whoever happens to be driving.
+.chaperone/*.json
